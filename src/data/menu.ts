@@ -146,11 +146,9 @@ export interface Staff {
   mustChangePin: boolean
 }
 
-export const STAFF: Staff[] = [
-  { id: 's2', name: 'Rina Sato', role: 'manager', pin: '0000', initials: 'RS', color: 'from-violet-400 to-purple-600', active: true, mustChangePin: true },
-  { id: 's1', name: 'Gilang Febrian', role: 'cashier', pin: '1234', initials: 'GF', color: 'from-amber-400 to-orange-500', active: true, mustChangePin: false },
-  { id: 's3', name: 'Kenji Mori', role: 'kitchen', pin: '5555', initials: 'KM', color: 'from-emerald-400 to-teal-600', active: true, mustChangePin: false },
-]
+/** Fresh installs start with no staff — the manager sets up the admin account
+ *  on first boot, then adds the rest of the team in Staff Management. */
+export const STAFF: Staff[] = []
 
 // ---------- Customers ----------
 

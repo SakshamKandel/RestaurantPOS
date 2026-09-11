@@ -540,6 +540,29 @@ export default function App() {
     return (
       <LoginScreen
         staff={state.staff}
+        onSetup={(name, pin) => {
+          const admin: Staff = {
+            id: uid(),
+            name,
+            role: 'manager',
+            pin,
+            initials: name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() || 'A',
+            color: STAFF_COLORS[1],
+            active: true,
+            mustChangePin: false,
+          }
+          setState((st) => ({
+            ...st,
+            staff: [admin, ...st.staff],
+            audit: [
+              { id: uid(), at: Date.now(), actor: name, action: 'staff.admin_setup', detail: 'first-boot admin account created' },
+              ...st.audit,
+            ].slice(0, 200),
+          }))
+          setUser(admin)
+          setView('staff')
+          flash(`Welcome, ${name} — add your staff`)
+        }}
         onLogin={(s, newPin) => {
           const firstSetup = !!newPin
           const member = newPin ? { ...s, pin: newPin, mustChangePin: false } : s
