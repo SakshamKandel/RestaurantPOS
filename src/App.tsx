@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BadgePercent } from 'lucide-react'
 import { CheckCircle2 } from 'lucide-react'
 import Sidebar, { type View } from './components/Sidebar'
@@ -32,7 +32,6 @@ import {
 import {
   appVersion,
   backupNow,
-  checkForUpdates,
   detectPrinters,
   initialState,
   installUpdate,
@@ -89,6 +88,7 @@ export default function App() {
   const [payOpen, setPayOpen] = useState(false)
   const [receipt, setReceipt] = useState<PlacedOrder | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const toastTimer = useRef<number | null>(null)
   const [printers, setPrinters] = useState<DetectedPrinter[]>([])
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [version, setVersion] = useState('')
@@ -129,7 +129,8 @@ export default function App() {
 
   const flash = (msg: string) => {
     setToast(msg)
-    window.setTimeout(() => setToast(null), 2800)
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setToast(null), 3200)
   }
 
   const audit = (action: string, detail: string) =>
@@ -845,9 +846,6 @@ export default function App() {
           audit={state.audit}
           printers={printers}
           version={version}
-          onCheckUpdates={() =>
-            checkForUpdates().then(() => flash('Checking for updates…'))
-          }
           onBackup={() =>
             backupNow(state).then((f) => {
               audit('backup.created', f ?? 'unknown location')

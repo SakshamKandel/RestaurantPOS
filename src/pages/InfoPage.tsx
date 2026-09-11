@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { DatabaseBackup, HardDrive, Info, Printer, ScrollText, Vault, WifiOff } from 'lucide-react'
 import type { Settings } from '../data/menu'
-import type { AuditEvent, DetectedPrinter } from '../store'
+import { checkForUpdates, type AuditEvent, type DetectedPrinter } from '../store'
 import logoIcon from '../assets/icon.png'
 
 interface Props {
@@ -9,11 +10,11 @@ interface Props {
   audit: AuditEvent[]
   printers: DetectedPrinter[]
   version: string
-  onCheckUpdates: () => void
   onBackup: () => void
 }
 
-export default function InfoPage({ settings, orderCount, audit, printers, version, onCheckUpdates, onBackup }: Props) {
+export default function InfoPage({ settings, orderCount, audit, printers, version, onBackup }: Props) {
+  const [check, setCheck] = useState<'idle' | 'checking' | { status: string; version?: string; message?: string }>('idle')
   const detected = (name: string) => printers.some((p) => p.name === name)
   const health = [
     { label: 'Local database', detail: `${orderCount} orders · auto-backup on every change`, ok: true, icon: HardDrive },
@@ -112,12 +113,29 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
               Backup Now
             </button>
             <button
-              onClick={onCheckUpdates}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-200 py-3 text-[12.5px] font-bold text-neutral-600 hover:border-primary hover:text-primary"
+              onClick={async () => {
+                if (check === 'checking') return
+                setCheck('checking')
+                const r = await checkForUpdates()
+                setCheck(r ?? { status: 'error', message: 'no response' })
+              }}
+              disabled={check === 'checking'}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-200 py-3 text-[12.5px] font-bold text-neutral-600 hover:border-primary hover:text-primary disabled:opacity-50"
             >
-              Check for Updates
+              {check === 'checking' ? 'Checking…' : 'Check for Updates'}
             </button>
           </div>
+          {check !== 'idle' && check !== 'checking' && (
+            <p className={`mt-2.5 text-center text-[11.5px] font-bold ${
+              check.status === 'found' ? 'text-emerald-600' : check.status === 'none' ? 'text-sky-600' : 'text-amber-600'
+            }`}>
+              {check.status === 'found'
+                ? `Update v${check.version} found — downloading in the background`
+                : check.status === 'none'
+                  ? `You're on the latest version (v${check.version})`
+                  : `Couldn't check — offline or GitHub unreachable (${check.message ?? 'error'})`}
+            </p>
+          )}
           <p className="mt-3 text-center text-[10.5px] font-medium leading-relaxed text-neutral-400">
             Broken update? Download any previous version from GitHub Releases and install it —
             your data lives in %APPDATA% and stays compatible across versions.

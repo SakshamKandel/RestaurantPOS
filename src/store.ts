@@ -158,7 +158,7 @@ interface PosBridge {
   printDoc?: (p: { deviceName: string; html: string; paperWidthMm: number }) => Promise<PrintResult>
   pickImage?: () => Promise<string | null>
   appVersion?: () => Promise<string>
-  checkUpdates?: () => Promise<unknown>
+  checkUpdates?: () => Promise<{ status: 'none' | 'found' | 'error'; version?: string; message?: string } | null>
   installUpdate?: () => Promise<void>
   onUpdateAvailable?: (cb: (i: { version: string }) => void) => void
   onUpdateDownloaded?: (cb: (i: UpdateInfo) => void) => void

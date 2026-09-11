@@ -216,15 +216,25 @@ ipcMain.handle('update:install', () => {
 })
 ipcMain.handle('update:check', () =>
   Promise.race([
-    autoUpdater.checkForUpdates().catch((e) => {
-      ulog(`manual check failed ${e?.message ?? e}`)
-      return null
-    }),
+    autoUpdater
+      .checkForUpdates()
+      .then((r) => {
+        if (!r) return { status: 'error', message: 'no result' }
+        const latest = r.updateInfo?.version
+        const isNewer = latest && latest !== app.getVersion()
+        ulog(`manual check result latest=${latest} newer=${isNewer}`)
+        return isNewer
+          ? { status: 'found', version: latest }
+          : { status: 'none', version: app.getVersion() }
+      })
+      .catch((e) => {
+        ulog(`manual check failed ${e?.message ?? e}`)
+        return { status: 'error', message: String(e?.message ?? e) }
+      }),
     new Promise((res) =>
       setTimeout(() => {
         ulog('manual check timed out')
-        mainWindow?.webContents.send('update:error', { message: 'timed out' })
-        res(null)
+        res({ status: 'error', message: 'timed out' })
       }, 15000),
     ),
   ]),
