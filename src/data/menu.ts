@@ -56,12 +56,9 @@ export interface Category {
   icon: IconName
 }
 
-export const SEED_CATEGORIES: Category[] = [
-  { id: 'soup', label: 'Soup', icon: 'soup' },
-  { id: 'ramen', label: 'Ramen', icon: 'ramen' },
-  { id: 'sushi', label: 'Sushi', icon: 'sushi' },
-  { id: 'beverages', label: 'Beverages', icon: 'beverages' },
-]
+/** Fresh installs start with no categories — the manager creates their own
+ *  in Menu → Categories before adding items. */
+export const SEED_CATEGORIES: Category[] = []
 
 export interface MenuItem {
   id: string

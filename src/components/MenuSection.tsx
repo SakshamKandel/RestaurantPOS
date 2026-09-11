@@ -14,7 +14,7 @@ function DishImage({ item }: { item: MenuItem }) {
   const [failed, setFailed] = useState(false)
   return (
     <div className="relative h-28 w-full overflow-hidden rounded-xl bg-gradient-to-br from-orange-50 to-stone-200">
-      {failed ? (
+      {failed || !item.image ? (
         <span className="flex h-full w-full items-center justify-center text-4xl">
           {item.emoji}
         </span>
@@ -167,9 +167,16 @@ export default function MenuSection({
         })}
       </div>
       {items.length === 0 && (
-        <p className="py-12 text-center text-[12px] font-semibold text-neutral-400">
-          No items here — add them from Menu Management
-        </p>
+        <div className="rounded-3xl border border-dashed border-neutral-200 bg-white/60 py-12 text-center">
+          <p className="text-[13px] font-extrabold text-neutral-600">
+            {categories.length === 0 ? 'Your menu is empty' : 'No items in this category yet'}
+          </p>
+          <p className="mt-1 text-[11.5px] font-medium text-neutral-400">
+            {categories.length === 0
+              ? 'Managers: go to Menu → Categories to create your first category, then add items.'
+              : 'Managers can add items from the Menu page.'}
+          </p>
+        </div>
       )}
     </section>
   )

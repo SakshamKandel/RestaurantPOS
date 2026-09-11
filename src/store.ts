@@ -127,7 +127,7 @@ export const initialState: PosState = {
   menu: MENU_ITEMS,
   categories: SEED_CATEGORIES,
   settings: DEFAULT_SETTINGS,
-  seq: 935,
+  seq: 1,
   shifts: [],
   audit: [],
   staff: STAFF,

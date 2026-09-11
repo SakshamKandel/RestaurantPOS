@@ -21,15 +21,15 @@ interface ItemForm {
   emoji: string
 }
 
-const emptyForm: ItemForm = {
+const emptyForm = (category: CategoryId): ItemForm => ({
   id: null,
   name: '',
   price: '',
-  category: 'sushi',
+  category,
   available: true,
   image: '',
   emoji: '🍽️',
-}
+})
 
 interface Props {
   menu: MenuItem[]
@@ -80,7 +80,7 @@ export default function MenuPage({ menu, categories, onSave, onDelete, onToggle,
       price: cents,
       category: form.category,
       available: form.available,
-      image: form.image.trim() || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=640&q=80',
+      image: form.image.trim(), // '' → emoji tile; never fetch a placeholder from the internet
       emoji: form.emoji.trim() || '🍽️',
     })
     setForm(null)
@@ -113,7 +113,11 @@ export default function MenuPage({ menu, categories, onSave, onDelete, onToggle,
             />
           </label>
           <button
-            onClick={() => setForm(emptyForm)}
+            onClick={() => {
+              if (!categories.length) return setCatManager(true)
+              setForm(emptyForm(catFilter === 'all' ? categories[0].id : catFilter))
+            }}
+            title={categories.length ? 'Add a menu item' : 'Create a category first'}
             className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[12.5px] font-extrabold text-white shadow-md shadow-orange-500/25 hover:bg-primary-dark"
           >
             <Plus size={15} strokeWidth={2.6} />

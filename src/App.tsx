@@ -20,7 +20,7 @@ import SettingsPage from './pages/SettingsPage'
 import InfoPage from './pages/InfoPage'
 import StaffPage from './pages/StaffPage'
 import {
-  LINE_ORDERS,
+  formatMoney,
   migrateSettings,
   type Category,
   type CategoryId,
@@ -84,7 +84,7 @@ export default function App() {
   const [orderNote, setOrderNote] = useState('')
   const [orderType, setOrderType] = useState<OrderType>('take-away')
   const [customerId, setCustomerId] = useState('c5')
-  const [category, setCategory] = useState<CategoryId>('sushi')
+  const [category, setCategory] = useState<CategoryId>('')
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
   const [query, setQuery] = useState('')
   const [payment, setPayment] = useState<PaymentMethod>('scan')
@@ -130,6 +130,12 @@ export default function App() {
   useEffect(() => {
     if (loaded) persist(state)
   }, [state, loaded])
+
+  // Keep the active category valid as categories are created/renamed/deleted
+  useEffect(() => {
+    if (!state.categories.some((c) => c.id === category))
+      setCategory(state.categories[0]?.id ?? '')
+  }, [state.categories, category])
 
   const flash = (msg: string) => {
     setToast(msg)
@@ -361,14 +367,14 @@ export default function App() {
       status: (o.status === 'new' ? 'waiting' : o.status) as OrderStatus,
       liveId: o.id,
     }))
-  const allLineOrders = [...liveLineOrders, ...LINE_ORDERS]
+  const allLineOrders = liveLineOrders
 
   // ---------- Actions ----------
   const placeOrder = (method: PaymentMethod, tendered: number, change: number) => {
     const customer = state.customers.find((c) => c.id === customerId)
     const order: PlacedOrder = {
       id: uid(),
-      number: `#${state.settings.orderPrefix}${state.seq}`,
+      number: `#${state.settings.orderPrefix}${String(state.seq).padStart(3, '0')}`,
       type: orderType,
       customer: customer?.name ?? 'Walk-in',
       lines: lines.map((l) => ({ name: l.item.name, qty: l.qty, price: l.item.price, note: l.note })),
@@ -413,10 +419,11 @@ export default function App() {
   }
 
   const holdOrder = () => {
+    if (!lines.length) return flash('Nothing to hold — the order is empty')
     const customer = state.customers.find((c) => c.id === customerId)
     const held: HeldOrder = {
       id: uid(),
-      label: `${customer?.name ?? 'Order'} ${state.seq}`,
+      label: `${customer && customer.id !== 'c5' ? customer.name : TYPE_LABEL[orderType]} · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
       type: orderType,
       customer: customer?.name ?? 'Walk-in',
       lines: lines.map((l) => ({ itemId: l.item.id, qty: l.qty, note: l.note })),
@@ -430,14 +437,20 @@ export default function App() {
   const recallHeld = (id: string) => {
     const h = state.held.find((x) => x.id === id)
     if (!h) return
-    const next: CartMap = {}
-    h.lines.forEach((l) => (next[l.itemId] = { qty: l.qty, note: l.note }))
+    // Merge into whatever is already in the cart; drop lines whose item was deleted
+    const next: CartMap = { ...cart }
+    let dropped = 0
+    h.lines.forEach((l) => {
+      if (!state.menu.some((m) => m.id === l.itemId)) return void dropped++
+      const cur = next[l.itemId]
+      next[l.itemId] = { qty: (cur?.qty ?? 0) + l.qty, note: l.note ?? cur?.note }
+    })
     setCart(next)
     setOrderType(h.type)
     const cust = state.customers.find((c) => c.name === h.customer)
     if (cust) setCustomerId(cust.id)
     setState((s) => ({ ...s, held: s.held.filter((x) => x.id !== id) }))
-    flash('Held order recalled')
+    flash(dropped ? `Held order recalled · ${dropped} deleted item${dropped > 1 ? 's' : ''} skipped` : 'Held order recalled')
   }
 
   const advanceOrder = (id: string) =>
@@ -452,11 +465,26 @@ export default function App() {
 
   const refundOrder = (id: string) => {
     const o = state.orders.find((x) => x.id === id)
+    if (!o) return
+    if (o.status === 'refunded') return flash(`${o.number} was already refunded`)
     setState((s) => ({
       ...s,
-      orders: s.orders.map((o) => (o.id === id ? { ...o, status: 'refunded' } : o)),
+      orders: s.orders.map((x) => (x.id === id ? { ...x, status: 'refunded' } : x)),
+      // roll back the customer's lifetime stats so reports stay truthful
+      customers: s.customers.map((c) =>
+        c.name === o.customer && c.id !== 'c5'
+          ? { ...c, visits: Math.max(0, c.visits - 1), spent: Math.max(0, c.spent - o.total) }
+          : c,
+      ),
     }))
-    audit('order.refunded', o ? `${o.number} · ${(o.total / 100).toFixed(2)}` : id)
+    audit('order.refunded', `${o.number} · ${o.payment} · ${(o.total / 100).toFixed(2)}`)
+    // cash refunds hand money back — open the drawer if one is connected
+    if (o.payment === 'cash' && state.settings.cashDrawer && !roleProblem('billing')) {
+      queueJob('DRAWER KICK', 'billing', o.number)
+      flash(`${o.number} refunded · drawer opened for ${formatMoney(o.total)} cash back`)
+    } else {
+      flash(`${o.number} refunded · ${formatMoney(o.total)}`)
+    }
   }
 
   // ---------- Shift & cash drawer ----------
@@ -479,14 +507,27 @@ export default function App() {
     const current = state.shifts.find((s) => s.closedAt === null)
     if (!current) return
     const lastCount = current.movements.filter((m) => m.type === 'count').at(-1)?.amount ?? null
+    const cashSales = state.orders
+      .filter((o) => o.createdAt >= current.openedAt && o.status !== 'refunded' && o.payment === 'cash')
+      .reduce((s, o) => s + o.total, 0)
+    const inOut = current.movements.reduce(
+      (s, m) => s + (m.type === 'paid-in' ? m.amount : m.type === 'paid-out' ? -m.amount : 0),
+      0,
+    )
+    const expected = current.float + cashSales + inOut
     setState((s) => ({
       ...s,
       shifts: s.shifts.map((sh) =>
         sh.id === current.id ? { ...sh, closedAt: Date.now(), counted: lastCount } : sh,
       ),
     }))
-    audit('shift.close', `expected drawer reconciled`)
-    flash('Shift closed — Z report recorded')
+    audit(
+      'shift.close',
+      lastCount === null
+        ? `expected ${formatMoney(expected)} · not counted`
+        : `expected ${formatMoney(expected)} · counted ${formatMoney(lastCount)} · variance ${formatMoney(lastCount - expected)}`,
+    )
+    flash(lastCount === null ? 'Shift closed without a cash count' : 'Shift closed — Z report recorded')
   }
 
   const addMovement = (type: MovementType, amount: number, reason: string) => {
@@ -557,7 +598,7 @@ export default function App() {
       return
     }
     setState((s) => ({ ...s, categories: s.categories.filter((c) => c.id !== id) }))
-    if (category === id) setCategory(state.categories[0]?.id ?? 'sushi')
+    if (category === id) setCategory(state.categories.find((c) => c.id !== id)?.id ?? '')
   }
 
   const orderNumber = `#${state.settings.orderPrefix}${state.seq}`
