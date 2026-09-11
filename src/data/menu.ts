@@ -73,35 +73,7 @@ export interface MenuItem {
   emoji: string
 }
 
-const img = (id: string) =>
-  `https://images.unsplash.com/${id}?auto=format&fit=crop&w=640&q=80`
-
-export const MENU_ITEMS: MenuItem[] = [
-  // Soup
-  { id: 'miso-soup', name: 'Miso Soup', price: 350, category: 'soup', available: true, image: img('photo-1547592166-23ac45744acd'), emoji: '🍲' },
-  { id: 'wakame-soup', name: 'Wakame Soup', price: 380, category: 'soup', available: true, image: img('photo-1547592180-85f173990554'), emoji: '🥣' },
-  { id: 'tonjiru', name: 'Tonjiru Pork Soup', price: 450, category: 'soup', available: true, image: img('photo-1547592166-23ac45744acd'), emoji: '🍜' },
-  { id: 'clear-soup', name: 'Clear Dashi Soup', price: 300, category: 'soup', available: false, image: img('photo-1547592180-85f173990554'), emoji: '🥣' },
-  // Ramen
-  { id: 'chicken-ramen', name: 'Chicken Ramen', price: 1100, category: 'ramen', available: true, image: img('photo-1569718212165-3a8278d5f624'), emoji: '🍜' },
-  { id: 'miso-ramen', name: 'Miso Ramen', price: 1050, category: 'ramen', available: true, image: img('photo-1557872943-16a5ac26437e'), emoji: '🍜' },
-  { id: 'tonkotsu-ramen', name: 'Tonkotsu Ramen', price: 1250, category: 'ramen', available: true, image: img('photo-1591814468924-caf88d1232e1'), emoji: '🍜' },
-  { id: 'shoyu-ramen', name: 'Shoyu Ramen', price: 1150, category: 'ramen', available: true, image: img('photo-1569718212165-3a8278d5f624'), emoji: '🍜' },
-  { id: 'tantan-ramen', name: 'Spicy TanTan', price: 1200, category: 'ramen', available: true, image: img('photo-1557872943-16a5ac26437e'), emoji: '🌶️' },
-  { id: 'veggie-ramen', name: 'Veggie Ramen', price: 980, category: 'ramen', available: false, image: img('photo-1591814468924-caf88d1232e1'), emoji: '🥬' },
-  // Sushi
-  { id: 'tamago-nigiri', name: 'Tamago Nigiri', price: 625, category: 'sushi', available: true, image: img('photo-1611143669185-af224c5e3252'), emoji: '🍣' },
-  { id: 'ebi-nigiri', name: 'Ebi Nigiri', price: 700, category: 'sushi', available: true, image: img('photo-1579871494447-9811cf80d66c'), emoji: '🍤' },
-  { id: 'tuna-nigiri', name: 'Tuna Nigiri', price: 950, category: 'sushi', available: true, image: img('photo-1553621042-f6e147245754'), emoji: '🍣' },
-  { id: 'salmon-nigiri', name: 'Salmon Nigiri', price: 850, category: 'sushi', available: true, image: img('photo-1579871494447-9811cf80d66c'), emoji: '🍣' },
-  { id: 'california-roll', name: 'California Roll', price: 780, category: 'sushi', available: true, image: img('photo-1579584425555-c3ce17fd4351'), emoji: '🍱' },
-  { id: 'unagi-maki', name: 'Unagi Maki', price: 920, category: 'sushi', available: false, image: img('photo-1617196034796-73dfa7b1fd56'), emoji: '🍣' },
-  // Beverages
-  { id: 'matcha-latte', name: 'Matcha Latte', price: 400, category: 'beverages', available: true, image: img('photo-1536013455962-2b8e7d8f2c0e'), emoji: '🍵' },
-  { id: 'ramune', name: 'Ramune Soda', price: 320, category: 'beverages', available: true, image: img('photo-1437418747212-8d9709afab22'), emoji: '🥤' },
-  { id: 'green-tea', name: 'Green Tea', price: 250, category: 'beverages', available: true, image: img('photo-1564890369478-c89ca6d9cde9'), emoji: '🍵' },
-  { id: 'yuzu-soda', name: 'Yuzu Soda', price: 420, category: 'beverages', available: true, image: img('photo-1437418747212-8d9709afab22'), emoji: '🍋' },
-]
+export const MENU_ITEMS: MenuItem[] = []
 
 export type OrderStatus = 'waiting' | 'ready' | 'served'
 
@@ -121,14 +93,7 @@ export const ORDER_FILTERS: { id: OrderStatus | 'all'; label: string; dot: strin
   { id: 'served', label: 'Served', dot: 'bg-emerald-500' },
 ]
 
-export const LINE_ORDERS: LineOrder[] = [
-  { number: 'F0027', tag: 'Take Away', item: 'Chicken Ramen', qty: 2, time: '2 mins ago', status: 'waiting' },
-  { number: 'F0012', tag: 'Collection', item: 'Miso Ramen', qty: 1, time: 'Just now', status: 'waiting' },
-  { number: 'F0034', tag: 'Take Away', item: 'Tempura Udon', qty: 1, time: '4 mins ago', status: 'ready' },
-  { number: 'F0041', tag: 'Delivery', item: 'Salmon Nigiri', qty: 3, time: '6 mins ago', status: 'ready' },
-  { number: 'F0019', tag: 'Take Away', item: 'Shoyu Ramen', qty: 2, time: '8 mins ago', status: 'served' },
-  { number: 'F0050', tag: 'Delivery', item: 'California Roll', qty: 1, time: '10 mins ago', status: 'served' },
-]
+export const LINE_ORDERS: LineOrder[] = []
 
 // ---------- Staff & roles ----------
 

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { FolderCog, Pencil, Plus, Search, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react'
+import { FolderCog, ImagePlus, Pencil, Plus, Search, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react'
+import { pickImage } from '../store'
 import {
   formatMoney,
   ICONS,
@@ -256,12 +257,27 @@ export default function MenuPage({ menu, categories, onSave, onDelete, onToggle,
                   ))}
                 </select>
               </div>
-              <input
-                value={form.image}
-                onChange={(e) => setForm({ ...form, image: e.target.value })}
-                placeholder="Image URL (optional)"
-                className="rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[13px] font-medium outline-none focus:border-primary"
-              />
+              <div className="flex gap-2">
+                <input
+                  value={form.image}
+                  onChange={(e) => setForm({ ...form, image: e.target.value })}
+                  placeholder="Image URL (optional)"
+                  className="flex-1 rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[13px] font-medium outline-none focus:border-primary"
+                />
+                <button
+                  onClick={async () => {
+                    const url = await pickImage()
+                    if (url) setForm((f) => (f ? { ...f, image: url } : f))
+                  }}
+                  className="flex items-center gap-1.5 rounded-xl border border-neutral-200 px-3.5 text-[11.5px] font-bold text-neutral-600 transition-colors hover:border-primary hover:text-primary"
+                >
+                  <ImagePlus size={15} />
+                  Upload
+                </button>
+              </div>
+              {form.image && (
+                <img src={form.image} alt="" className="h-20 w-20 rounded-xl object-cover" />
+              )}
               <input
                 value={form.emoji}
                 onChange={(e) => setForm({ ...form, emoji: e.target.value })}

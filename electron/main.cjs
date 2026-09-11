@@ -1,12 +1,20 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { pathToFileURL } = require('url')
 const { autoUpdater } = require('electron-updater')
+
+// Custom protocol so menu photos stored in userData render in <img> tags
+// in both dev (localhost) and packaged (file://) modes.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'posimg', privileges: { stream: true, supportFetchAPI: true } },
+])
 
 const isDev = process.argv.includes('--dev')
 
 const storePath = () => path.join(app.getPath('userData'), 'pos-store.json')
 const backupDir = () => path.join(app.getPath('userData'), 'backups')
+const imagesDir = () => path.join(app.getPath('userData'), 'images')
 
 const MAX_BACKUPS = 10
 
@@ -180,6 +188,20 @@ ipcMain.handle('update:install', () => {
 ipcMain.handle('update:check', () => autoUpdater.checkForUpdates().catch(() => null))
 ipcMain.handle('app:version', () => app.getVersion())
 
+// --- Menu photos: pick a file → copy into userData/images → posimg:// URL ---
+ipcMain.handle('images:pick', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose menu item photo',
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
+    properties: ['openFile'],
+  })
+  if (res.canceled || !res.filePaths[0]) return null
+  fs.mkdirSync(imagesDir(), { recursive: true })
+  const name = `${Date.now()}-${path.basename(res.filePaths[0]).replace(/[^\w.\-]/g, '_')}`
+  fs.copyFileSync(res.filePaths[0], path.join(imagesDir(), name))
+  return `posimg://img/${encodeURIComponent(name)}`
+})
+
 ipcMain.handle('printers:print', (_e, { deviceName, html, paperWidthMm }) => {
   return new Promise((resolve) => {
     const win = new BrowserWindow({ show: false })
@@ -203,6 +225,12 @@ ipcMain.handle('printers:print', (_e, { deviceName, html, paperWidthMm }) => {
 })
 
 app.whenReady().then(() => {
+  // Serve uploaded menu photos: posimg://img/<file> → userData/images/<file>
+  protocol.handle('posimg', (req) => {
+    const name = decodeURIComponent(new URL(req.url).pathname).replace(/^\//, '')
+    const file = path.join(imagesDir(), name)
+    return net.fetch(pathToFileURL(file).toString())
+  })
   migratePendingJobs()
   createWindow()
   setupAutoUpdater()

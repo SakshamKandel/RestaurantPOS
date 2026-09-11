@@ -74,10 +74,7 @@ export default function App() {
   const [loaded, setLoaded] = useState(false)
 
   // Current draft order
-  const [cart, setCart] = useState<CartMap>({
-    'tuna-nigiri': { qty: 1 },
-    'matcha-latte': { qty: 1 },
-  })
+  const [cart, setCart] = useState<CartMap>({})
   const [discount, setDiscount] = useState<Discount>(null)
   const [orderNote, setOrderNote] = useState('')
   const [orderType, setOrderType] = useState<OrderType>('take-away')

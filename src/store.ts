@@ -156,6 +156,7 @@ interface PosBridge {
   backup: (s: PosState) => Promise<string>
   listPrinters?: () => Promise<DetectedPrinter[]>
   printDoc?: (p: { deviceName: string; html: string; paperWidthMm: number }) => Promise<PrintResult>
+  pickImage?: () => Promise<string | null>
   appVersion?: () => Promise<string>
   checkUpdates?: () => Promise<unknown>
   installUpdate?: () => Promise<void>
@@ -215,6 +216,9 @@ export const onUpdateAvailable = (cb: (i: { version: string }) => void) =>
   bridge?.onUpdateAvailable?.(cb)
 export const onUpdateDownloaded = (cb: (i: UpdateInfo) => void) =>
   bridge?.onUpdateDownloaded?.(cb)
+
+/** File picker → copies photo into app data, returns posimg:// URL (or null). */
+export const pickImage = () => bridge?.pickImage?.() ?? Promise.resolve(null)
 
 export function timeAgo(ts: number): string {
   const m = Math.max(0, Math.round((Date.now() - ts) / 60000))
