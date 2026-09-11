@@ -50,6 +50,7 @@ function createWindow() {
     minWidth: 1180,
     minHeight: 720,
     title: 'KhadkaPOS',
+    icon: path.join(__dirname, '..', 'build', 'icon.ico'),
     autoHideMenuBar: true,
     backgroundColor: '#f3f1ee',
     webPreferences: {

@@ -1,4 +1,4 @@
-import { DatabaseBackup, HardDrive, Info, Printer, ScrollText, Soup, Vault, WifiOff } from 'lucide-react'
+import { DatabaseBackup, HardDrive, Info, Printer, ScrollText, Vault, WifiOff } from 'lucide-react'
 import type { Settings } from '../data/menu'
 import type { AuditEvent, DetectedPrinter } from '../store'
 
@@ -34,9 +34,7 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
       <div className="mt-5 grid grid-cols-2 gap-4">
         <section className="rounded-3xl bg-white p-6 shadow-sm">
           <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-white shadow-md shadow-orange-500/30">
-              <Soup size={24} strokeWidth={2.4} />
-            </span>
+            <img src="/icon.png" alt="KhadkaPOS" className="h-12 w-12 rounded-2xl object-contain shadow-md shadow-blue-500/20" />
             <div>
               <p className="text-[17px] font-extrabold">KhadkaPOS</p>
               <p className="text-[11.5px] font-medium text-neutral-400">

@@ -6,7 +6,6 @@ import {
   LogOut,
   Printer,
   Settings,
-  Soup,
   UserCog,
   Users,
   UtensilsCrossed,
@@ -87,9 +86,7 @@ export default function Sidebar({ view, role, userName, onNavigate, onLogout }: 
   return (
     <aside className="flex w-[212px] shrink-0 flex-col border-r border-neutral-200/70 bg-white px-4 py-6">
       <div className="mb-8 flex items-center gap-2.5 px-1.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white shadow-md shadow-orange-500/30">
-          <Soup size={19} strokeWidth={2.4} />
-        </span>
+        <img src="/icon.png" alt="KhadkaPOS" className="h-9 w-9 rounded-xl object-contain shadow-md shadow-blue-500/20" />
         <span className="text-[19px] font-extrabold tracking-tight">Khadka</span>
       </div>
 

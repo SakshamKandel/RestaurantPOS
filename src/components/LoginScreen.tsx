@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Delete, KeyRound, Lock, ShieldCheck, Soup } from 'lucide-react'
+import { Delete, KeyRound, Lock, ShieldCheck } from 'lucide-react'
 import type { Staff } from '../data/menu'
 
 const PAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del']
@@ -102,9 +102,7 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
         {/* Left panel — staff picker, or first-boot admin setup */}
         <div className="w-[380px] border-r border-neutral-100 p-8">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white">
-              <Soup size={20} strokeWidth={2.4} />
-            </span>
+            <img src="/icon.png" alt="KhadkaPOS" className="h-10 w-10 rounded-xl object-contain" />
             <span className="text-[20px] font-extrabold tracking-tight">Khadka</span>
           </div>
 
