@@ -134,23 +134,44 @@ export const SEED_CUSTOMERS: Customer[] = [
 // ---------- Settings ----------
 
 export interface Settings {
+  // Store identity
   restaurantName: string
+  legalName: string
   address: string
   phone: string
+  email: string
+  website: string
+  taxId: string
+  receiptFooter: string
+  // Tax & numbering
   taxRate: number
   orderPrefix: string
-  receiptFooter: string
+  // Hardware
   kitchenPrinter: string
+  kitchenAddress: string
   billingPrinter: string
+  billingAddress: string
+  paperWidth: '58' | '80'
+  cashDrawer: boolean
+  drawerOnCash: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   restaurantName: 'Tabetei Japanese Kitchen',
+  legalName: 'Tabetei Kitchen LLC',
   address: '742 Sunset Blvd, Los Angeles, CA 90046',
   phone: '+1 (323) 555-0147',
+  email: 'hello@tabetei.com',
+  website: 'www.tabetei.com',
+  taxId: 'EIN 12-3456789',
+  receiptFooter: 'Thank you, please come again!',
   taxRate: 0.095, // US sales tax (CA combined rate); editable per state
   orderPrefix: 'DNN',
-  receiptFooter: 'Thank you, please come again!',
   kitchenPrinter: 'Epson TM-T20III Thermal (Kitchen)',
+  kitchenAddress: 'USB003 · 192.168.1.40:9100',
   billingPrinter: 'Epson TM-T88V Thermal (Billing)',
+  billingAddress: 'USB001 · 192.168.1.41:9100',
+  paperWidth: '80',
+  cashDrawer: true,
+  drawerOnCash: true,
 }

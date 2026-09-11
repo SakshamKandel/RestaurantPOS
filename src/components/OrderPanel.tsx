@@ -7,6 +7,7 @@ import {
   ScanLine,
   ShoppingBag,
   Trash2,
+  Vault,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -54,6 +55,8 @@ interface Props {
   onHold: () => void
   onPrint: () => void
   onOrder: () => void
+  drawerEnabled: boolean
+  onOpenDrawer: () => void
 }
 
 export default function OrderPanel({
@@ -74,6 +77,8 @@ export default function OrderPanel({
   onHold,
   onPrint,
   onOrder,
+  drawerEnabled,
+  onOpenDrawer,
 }: Props) {
   const itemCount = lines.reduce((n, l) => n + l.qty, 0)
   const customer = customers.find((c) => c.id === customerId)
@@ -228,6 +233,14 @@ export default function OrderPanel({
           >
             <Printer size={15} />
             Print
+          </button>
+          <button
+            onClick={onOpenDrawer}
+            disabled={!drawerEnabled}
+            title={drawerEnabled ? 'Open cash drawer (no sale)' : 'Cash drawer disabled in Settings'}
+            className="flex w-11 items-center justify-center rounded-xl border border-neutral-200 py-2.5 text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Vault size={15} />
           </button>
         </div>
         <button

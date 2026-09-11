@@ -11,6 +11,7 @@ import ReceiptModal from './components/ReceiptModal'
 import DashboardPage from './pages/DashboardPage'
 import MenuPage from './pages/MenuPage'
 import PrintersPage from './pages/PrintersPage'
+import ShiftPage from './pages/ShiftPage'
 import CustomersPage from './pages/CustomersPage'
 import TransactionsPage from './pages/TransactionsPage'
 import ReportPage from './pages/ReportPage'
@@ -30,11 +31,15 @@ import {
   loadPersisted,
   persist,
   timeAgo,
+  type DocType,
   type HeldOrder,
+  type MovementType,
   type OrderType,
   type PlacedOrder,
   type PosState,
   type PrintJob,
+  type PrinterRole,
+  type Shift,
 } from './store'
 import type { DisplayOrder } from './components/OrderLine'
 
@@ -94,11 +99,21 @@ export default function App() {
     window.setTimeout(() => setToast(null), 2800)
   }
 
+  const audit = (action: string, detail: string) =>
+    setState((s) => ({
+      ...s,
+      audit: [
+        { id: uid(), at: Date.now(), actor: user?.name ?? 'system', action, detail },
+        ...s.audit,
+      ].slice(0, 200),
+    }))
+
   // ---------- Print queue (simulated thermal printers) ----------
-  const enqueueJobs = (orderNumber: string) => {
+  const enqueueJobs = (orderNumber: string, extra: PrintJob[] = []) => {
     const jobs: PrintJob[] = [
       { id: uid(), orderNumber, docType: 'KITCHEN TICKET', role: 'kitchen', status: 'pending', copy: false, createdAt: Date.now() },
       { id: uid(), orderNumber, docType: 'RECEIPT', role: 'billing', status: 'pending', copy: false, createdAt: Date.now() },
+      ...extra,
     ]
     setState((s) => ({ ...s, printJobs: [...jobs, ...s.printJobs] }))
     jobs.forEach((j) => {
@@ -111,6 +126,41 @@ export default function App() {
         }))
       }, j.role === 'kitchen' ? 900 : 1500)
     })
+  }
+
+  const queueJob = (docType: DocType, role: PrinterRole, orderNumber = '—') => {
+    const job: PrintJob = {
+      id: uid(),
+      orderNumber,
+      docType,
+      role,
+      status: 'pending',
+      copy: false,
+      createdAt: Date.now(),
+    }
+    setState((s) => ({ ...s, printJobs: [job, ...s.printJobs] }))
+    window.setTimeout(() => {
+      setState((s) => ({
+        ...s,
+        printJobs: s.printJobs.map((j) => (j.id === job.id ? { ...j, status: 'printed' } : j)),
+      }))
+    }, 1100)
+  }
+
+  const openDrawer = (reason: string) => {
+    if (!state.settings.cashDrawer) {
+      flash('Cash drawer disabled in Settings')
+      return
+    }
+    queueJob('DRAWER KICK', 'billing')
+    audit('drawer.open', reason)
+    flash(`Drawer kicked via ${state.settings.billingPrinter}`)
+  }
+
+  const testPrint = (role: PrinterRole) => {
+    queueJob('TEST', role)
+    audit('printer.test', role)
+    flash(`Test page queued → ${role === 'kitchen' ? state.settings.kitchenPrinter : state.settings.billingPrinter}`)
   }
 
   const retryJob = (id: string) => {
@@ -224,7 +274,12 @@ export default function App() {
       cashier: user?.name ?? 'Unknown',
     }
     setState((s) => ({ ...s, orders: [order, ...s.orders], seq: s.seq + 1 }))
-    enqueueJobs(order.number) // kitchen ticket → chef printer, receipt → billing printer
+    const kick: PrintJob[] =
+      method === 'cash' && state.settings.drawerOnCash && state.settings.cashDrawer
+        ? [{ id: uid(), orderNumber: order.number, docType: 'DRAWER KICK', role: 'billing', status: 'pending', copy: false, createdAt: Date.now() }]
+        : []
+    enqueueJobs(order.number, kick) // kitchen ticket → chef printer, receipt (+drawer kick) → billing printer
+    audit('order.completed', `${order.number} · ${method} · ${(total / 100).toFixed(2)}`)
     setCart({})
     setPayOpen(false)
     setReceipt(order)
@@ -269,11 +324,62 @@ export default function App() {
       ),
     }))
 
-  const refundOrder = (id: string) =>
+  const refundOrder = (id: string) => {
+    const o = state.orders.find((x) => x.id === id)
     setState((s) => ({
       ...s,
       orders: s.orders.map((o) => (o.id === id ? { ...o, status: 'refunded' } : o)),
     }))
+    audit('order.refunded', o ? `${o.number} · ${(o.total / 100).toFixed(2)}` : id)
+  }
+
+  // ---------- Shift & cash drawer ----------
+  const openShift = (float: number) => {
+    const shift: Shift = {
+      id: uid(),
+      openedAt: Date.now(),
+      closedAt: null,
+      openedBy: user?.name ?? 'Unknown',
+      float,
+      counted: null,
+      movements: [{ id: uid(), type: 'float', amount: float, reason: 'Opening float', at: Date.now(), actor: user?.name ?? 'Unknown' }],
+    }
+    setState((s) => ({ ...s, shifts: [shift, ...s.shifts] }))
+    audit('shift.open', `float ${(float / 100).toFixed(2)}`)
+    flash('Shift opened — drawer ready')
+  }
+
+  const closeShift = () => {
+    const current = state.shifts.find((s) => s.closedAt === null)
+    if (!current) return
+    const lastCount = current.movements.filter((m) => m.type === 'count').at(-1)?.amount ?? null
+    setState((s) => ({
+      ...s,
+      shifts: s.shifts.map((sh) =>
+        sh.id === current.id ? { ...sh, closedAt: Date.now(), counted: lastCount } : sh,
+      ),
+    }))
+    audit('shift.close', `expected drawer reconciled`)
+    flash('Shift closed — Z report recorded')
+  }
+
+  const addMovement = (type: MovementType, amount: number, reason: string) => {
+    const current = state.shifts.find((s) => s.closedAt === null)
+    if (!current) {
+      flash('Open a shift first')
+      return
+    }
+    const mv = { id: uid(), type, amount, reason, at: Date.now(), actor: user?.name ?? 'Unknown' }
+    setState((s) => ({
+      ...s,
+      shifts: s.shifts.map((sh) =>
+        sh.id === current.id ? { ...sh, movements: [...sh.movements, mv] } : sh,
+      ),
+    }))
+    audit(`drawer.${type}`, `${reason} · ${(amount / 100).toFixed(2)}`)
+    if (type !== 'count') flash(`${reason} recorded`)
+    else flash('Cash count recorded')
+  }
 
   const addCustomer = (c: Omit<Customer, 'id' | 'visits' | 'spent'>) =>
     setState((s) => ({
@@ -300,7 +406,21 @@ export default function App() {
 
   const orderNumber = `#${state.settings.orderPrefix}${state.seq}`
 
-  if (!user) return <LoginScreen onLogin={setUser} />
+  if (!user)
+    return (
+      <LoginScreen
+        onLogin={(s) => {
+          setUser(s)
+          setState((st) => ({
+            ...st,
+            audit: [
+              { id: uid(), at: Date.now(), actor: s.name, action: 'auth.login', detail: `${s.role} signed in` },
+              ...st.audit,
+            ].slice(0, 200),
+          }))
+        }}
+      />
+    )
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-canvas">
@@ -359,6 +479,11 @@ export default function App() {
             onHold={holdOrder}
             onPrint={() => flash('Receipt sent to billing printer')}
             onOrder={() => setPayOpen(true)}
+            drawerEnabled={state.settings.cashDrawer}
+            onOpenDrawer={() => {
+              openDrawer('No-sale open from order screen')
+              addMovement('no-sale', 0, 'No-sale drawer open')
+            }}
           />
         </>
       )}
@@ -398,20 +523,41 @@ export default function App() {
           onReprint={reprintReceipt}
         />
       )}
+      {view === 'shift' && (
+        <ShiftPage
+          shifts={state.shifts}
+          orders={state.orders}
+          drawerEnabled={state.settings.cashDrawer}
+          userName={user.name}
+          onOpenShift={openShift}
+          onCloseShift={closeShift}
+          onMovement={addMovement}
+          onOpenDrawer={openDrawer}
+        />
+      )}
       {view === 'report' && <ReportPage orders={state.orders} />}
       {view === 'settings' && (
         <SettingsPage
           settings={state.settings}
           onChange={(settings) => setState((s) => ({ ...s, settings }))}
-          onSaved={() => flash('Settings saved')}
+          onSaved={() => {
+            audit('settings.saved', 'store/device configuration updated')
+            flash('Settings saved')
+          }}
+          onTestPrint={testPrint}
+          onOpenDrawer={openDrawer}
         />
       )}
       {view === 'info' && (
         <InfoPage
           settings={state.settings}
           orderCount={state.orders.length}
+          audit={state.audit}
           onBackup={() =>
-            backupNow(state).then((f) => flash(f ? `Backup written to ${f}` : 'Backup failed'))
+            backupNow(state).then((f) => {
+              audit('backup.created', f ?? 'unknown location')
+              flash(f ? `Backup written to ${f}` : 'Backup failed')
+            })
           }
         />
       )}

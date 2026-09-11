@@ -47,14 +47,49 @@ export interface HeldOrder {
 
 export type PrinterRole = 'kitchen' | 'billing'
 
+export type DocType = 'KITCHEN TICKET' | 'RECEIPT' | 'DRAWER KICK' | 'TEST'
+
 export interface PrintJob {
   id: string
   orderNumber: string
-  docType: 'KITCHEN TICKET' | 'RECEIPT'
+  docType: DocType
   role: PrinterRole
   status: 'pending' | 'printed' | 'failed'
   copy: boolean
   createdAt: number
+}
+
+// ---------- Cash drawer & shift ----------
+
+export type MovementType = 'float' | 'paid-in' | 'paid-out' | 'no-sale' | 'count'
+
+export interface DrawerMovement {
+  id: string
+  type: MovementType
+  amount: Cents
+  reason: string
+  at: number
+  actor: string
+}
+
+export interface Shift {
+  id: string
+  openedAt: number
+  closedAt: number | null
+  openedBy: string
+  float: Cents
+  counted: Cents | null
+  movements: DrawerMovement[]
+}
+
+// ---------- Audit trail ----------
+
+export interface AuditEvent {
+  id: string
+  at: number
+  actor: string
+  action: string
+  detail: string
 }
 
 export interface PosState {
@@ -65,6 +100,8 @@ export interface PosState {
   menu: MenuItem[]
   settings: Settings
   seq: number
+  shifts: Shift[]
+  audit: AuditEvent[]
 }
 
 export const initialState: PosState = {
@@ -75,6 +112,8 @@ export const initialState: PosState = {
   menu: MENU_ITEMS,
   settings: DEFAULT_SETTINGS,
   seq: 935,
+  shifts: [],
+  audit: [],
 }
 
 // ---------- Persistence (Electron IPC, localStorage fallback) ----------
