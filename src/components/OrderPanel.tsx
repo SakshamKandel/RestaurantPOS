@@ -17,13 +17,21 @@ import {
 } from 'lucide-react'
 import {
   formatMoney,
+  modsTotal,
   type Cents,
   type Customer,
   type MenuItem,
+  type SelectedMod,
 } from '../data/menu'
 import type { Discount, OrderType } from '../store'
 
 export type PaymentMethod = 'cash' | 'scan' | 'credit'
+
+export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
+  cash: 'Cash',
+  scan: 'Scan',
+  credit: 'Credit',
+}
 
 const PAYMENT_METHODS: { id: PaymentMethod; label: string; icon: LucideIcon }[] = [
   { id: 'cash', label: 'Cash', icon: Banknote },
@@ -38,9 +46,12 @@ const ORDER_TYPES: { id: OrderType; label: string }[] = [
 ]
 
 export interface CartLine {
+  /** lineKey — unique per item+modifier combo. */
+  key: string
   item: MenuItem
   qty: number
   note?: string
+  mods?: SelectedMod[]
 }
 
 interface Props {
@@ -236,50 +247,56 @@ export default function OrderPanel({
           </div>
         ) : (
           <ul className="mt-3 flex flex-col divide-y divide-neutral-100">
-            {lines.map(({ item, qty, note }) => (
-              <li key={item.id} className="py-2.5">
+            {lines.map(({ key, item, qty, note, mods }) => (
+              <li key={key} className="py-2.5">
                 <div className="group flex items-center gap-2">
                   <span className="flex items-center rounded-lg bg-neutral-100">
                     <button
-                      onClick={() => onLineQty(item.id, -1)}
+                      onClick={() => onLineQty(key, -1)}
                       className="flex h-6 w-6 items-center justify-center text-neutral-500 hover:text-primary"
                     >
                       <Minus size={11} strokeWidth={3} />
                     </button>
                     <span className="w-5 text-center text-[11.5px] font-bold">{qty}</span>
                     <button
-                      onClick={() => onLineQty(item.id, 1)}
+                      onClick={() => onLineQty(key, 1)}
                       className="flex h-6 w-6 items-center justify-center text-neutral-500 hover:text-primary"
                     >
                       <Plus size={11} strokeWidth={3} />
                     </button>
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-neutral-700">
-                    {item.name}
+                  <span className="min-w-0 flex-1 text-[12.5px] font-semibold text-neutral-700">
+                    <span className="block truncate">{item.name}</span>
+                    {mods?.map((m, i) => (
+                      <span key={i} className="block truncate text-[10.5px] font-medium text-neutral-400">
+                        {m.name}
+                        {m.price ? ` +${formatMoney(m.price)}` : ''}
+                      </span>
+                    ))}
                   </span>
                   <button
-                    onClick={() => setNoteLine(noteLine === item.id ? null : item.id)}
+                    onClick={() => setNoteLine(noteLine === key ? null : key)}
                     title="Add note (e.g. no onions)"
-                    className={`rounded-md p-1 transition-colors ${note || noteLine === item.id ? 'text-primary' : 'text-neutral-300 hover:text-primary'}`}
+                    className={`rounded-md p-1 transition-colors ${note || noteLine === key ? 'text-primary' : 'text-neutral-300 hover:text-primary'}`}
                   >
                     <StickyNote size={13} />
                   </button>
                   <button
-                    onClick={() => onRemoveLine(item.id)}
+                    onClick={() => onRemoveLine(key)}
                     className="rounded-md p-1 text-neutral-300 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-50 hover:text-red-500"
                     aria-label={`Remove ${item.name}`}
                   >
                     <Trash2 size={13} />
                   </button>
                   <span className="w-14 text-right text-[12.5px] font-extrabold">
-                    {formatMoney(item.price * qty)}
+                    {formatMoney((item.price + modsTotal(mods)) * qty)}
                   </span>
                 </div>
-                {(noteLine === item.id || note) && (
+                {(noteLine === key || note) && (
                   <input
-                    autoFocus={noteLine === item.id}
+                    autoFocus={noteLine === key}
                     value={note ?? ''}
-                    onChange={(e) => onLineNote(item.id, e.target.value)}
+                    onChange={(e) => onLineNote(key, e.target.value)}
                     onBlur={() => setNoteLine(null)}
                     placeholder="Note for kitchen (e.g. no onions)"
                     className="mt-1.5 w-full rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-[11px] font-medium italic text-neutral-600 outline-none focus:border-primary"

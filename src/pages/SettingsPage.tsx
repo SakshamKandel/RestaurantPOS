@@ -248,15 +248,64 @@ export default function SettingsPage({ settings, printers, onRefreshPrinters, on
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3.5">
               <Field
-                label="Sales tax (%)"
+                label="Default tax (%)"
                 type="number"
                 value={String(Math.round(draft.taxRate * 10000) / 100)}
                 onChange={(v) => set('taxRate', Math.min(1, Math.max(0, Number(v) / 100)) || 0)}
               />
               <Field label="Order number prefix" value={draft.orderPrefix} onChange={(v) => set('orderPrefix', v.toUpperCase().slice(0, 5))} />
             </div>
+
+            {/* Per-item tax classes */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold text-neutral-500">Tax classes (assign per item in Menu)</p>
+                <button
+                  onClick={() =>
+                    set('taxClasses', [
+                      ...draft.taxClasses,
+                      { id: `tax-${Date.now().toString(36)}`, name: '', rate: 0 },
+                    ])
+                  }
+                  className="text-[10.5px] font-bold text-primary hover:text-primary-dark"
+                >
+                  + Add class
+                </button>
+              </div>
+              <div className="mt-2 flex flex-col gap-2">
+                {draft.taxClasses.map((t, i) => (
+                  <div key={t.id} className="flex items-center gap-2">
+                    <input
+                      value={t.name}
+                      onChange={(e) =>
+                        set('taxClasses', draft.taxClasses.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
+                      }
+                      placeholder="Class name"
+                      className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-[12px] font-medium outline-none focus:border-primary"
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={Math.round(t.rate * 10000) / 100}
+                      onChange={(e) =>
+                        set('taxClasses', draft.taxClasses.map((x, j) => (j === i ? { ...x, rate: Math.min(1, Math.max(0, Number(e.target.value) / 100)) } : x)))
+                      }
+                      className="w-20 rounded-lg border border-neutral-200 px-2.5 py-2 text-right text-[12px] font-medium outline-none focus:border-primary"
+                    />
+                    <span className="w-4 text-[11px] font-bold text-neutral-400">%</span>
+                    <button
+                      onClick={() => set('taxClasses', draft.taxClasses.filter((_, j) => j !== i))}
+                      disabled={draft.taxClasses.length <= 1}
+                      className="rounded-lg p-1 text-neutral-300 hover:text-red-500 disabled:opacity-30"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
             <p className="mt-3 text-[10.5px] font-medium text-neutral-400">
-              Currency USD ($) · menu prices are tax-exclusive · tax is added at checkout
+              Currency USD ($) · menu prices are tax-exclusive · items without a class use the default rate
             </p>
           </section>
 

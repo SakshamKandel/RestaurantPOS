@@ -1,5 +1,5 @@
-import { formatMoney, type Settings } from '../data/menu'
-import type { PlacedOrder } from '../store'
+import { formatMoney, modsTotal, type Settings } from '../data/menu'
+import type { PlacedOrder, PaymentRecord } from '../store'
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -9,7 +9,7 @@ const TYPE_LABEL: Record<string, string> = {
   collection: 'COLLECTION',
   delivery: 'DELIVERY',
 }
-const PAY_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', scan: 'QR / Scan' }
+const PAY_LABEL: Record<string, string> = { cash: 'Cash', credit: 'Card', card: 'Card', scan: 'QR / Scan' }
 
 const fmtDate = (t: number) =>
   new Date(t).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
@@ -54,15 +54,38 @@ hr.solid{border-top:1.5px solid #000}
 export function receiptHtml(o: PlacedOrder, s: Settings, copy = false): string {
   const w = Number(s.billingPaper)
   const items = o.lines
-    .map(
-      (l) => `
-<div class="item"><span class="q">${l.qty}</span><span class="n">${esc(l.name)}</span><span class="p">${formatMoney(l.qty * l.price)}</span></div>${
-        l.qty > 1 ? `<div class="note xs">${l.qty} × ${formatMoney(l.price)}</div>` : ''
-      }${l.note ? `<div class="note xs">* ${esc(l.note)}</div>` : ''}`,
-    )
+    .map((l) => {
+      const unit = l.price + modsTotal(l.mods)
+      return `
+<div class="item"><span class="q">${l.qty}</span><span class="n">${esc(l.name)}${l.refundedQty ? ` <span class="xs">(refunded ${l.refundedQty})</span>` : ''}</span><span class="p">${formatMoney(l.qty * unit)}</span></div>${
+        (l.mods ?? [])
+          .map((m) => `<div class="note xs">+ ${esc(m.name)}${m.price ? ` ${formatMoney(m.price)}` : ''}</div>`)
+          .join('')
+      }${l.qty > 1 ? `<div class="note xs">${l.qty} × ${formatMoney(unit)}</div>` : ''}${l.note ? `<div class="note xs">* ${esc(l.note)}</div>` : ''}`
+    })
     .join('')
   const qty = o.lines.reduce((n, l) => n + l.qty, 0)
-  const isCash = o.payment === 'cash'
+  // split payments when present, else the legacy single payment fields
+  const pays: PaymentRecord[] = o.payments?.length
+    ? o.payments
+    : [{ method: o.payment, amount: o.total - o.change, tendered: o.tendered, change: o.change }]
+  const totalChange = pays.reduce((n, p) => n + (p.change ?? 0), 0)
+  const payRows =
+    pays
+      .map(
+        (p) => `<div class="row"><span>${PAY_LABEL[p.method] ?? p.method}${p.method === 'cash' ? ' tendered' : ''}</span><span>${formatMoney(p.method === 'cash' ? (p.tendered ?? p.amount) : p.amount)}</span></div>`,
+      )
+      .join('') +
+    (totalChange
+      ? `<div class="row b"><span>Change</span><span>${formatMoney(totalChange)}</span></div>`
+      : pays.every((p) => p.method !== 'cash')
+        ? '<div class="row"><span>Status</span><span>APPROVED</span></div>'
+        : '')
+  const taxRows = o.taxBreakdown?.length
+    ? o.taxBreakdown
+        .map((t) => `<div class="row"><span>Tax · ${esc(t.name)} (${(t.rate * 100).toFixed(2)}%)</span><span>${formatMoney(t.amount)}</span></div>`)
+        .join('')
+    : `<div class="row"><span>Sales tax (${(s.taxRate * 100).toFixed(2)}%)</span><span>${formatMoney(o.tax)}</span></div>`
   const header = [s.legalName && s.legalName !== s.restaurantName ? s.legalName : '', s.address, s.phone]
     .filter(Boolean)
     .map((t) => `<p class="c sm">${esc(t)}</p>`)
@@ -88,12 +111,13 @@ ${items}
 <hr>
 <div class="row"><span>Subtotal (${qty} item${qty === 1 ? '' : 's'})</span><span>${formatMoney(o.subtotal)}</span></div>
 ${o.discount ? `<div class="row"><span>Discount</span><span>-${formatMoney(o.discount)}</span></div>` : ''}
-<div class="row"><span>Sales tax (${(s.taxRate * 100).toFixed(2)}%)</span><span>${formatMoney(o.tax)}</span></div>
+${taxRows}
 <hr class="solid">
 <div class="tot"><span>TOTAL</span><span>${formatMoney(o.total)}</span></div>
+${o.status === 'refunded' ? '<p class="c b">*** REFUNDED ***</p>' : o.status === 'partial-refund' ? '<p class="c b">*** PARTIALLY REFUNDED ***</p>' : ''}
 <hr class="solid">
-<div class="row"><span>${PAY_LABEL[o.payment] ?? o.payment}${isCash ? ' tendered' : ''}</span><span>${formatMoney(isCash ? o.tendered : o.total)}</span></div>
-${isCash ? `<div class="row b"><span>Change</span><span>${formatMoney(o.change)}</span></div>` : '<div class="row"><span>Status</span><span>APPROVED</span></div>'}
+${payRows}
+${o.refunds?.map((r) => `<div class="row xs"><span>Refund ${fmtTime(r.at)}</span><span>-${formatMoney(r.amount)}</span></div>`).join('') ?? ''}
 ${o.note ? `<div class="box xs"><span class="b">Note:</span> ${esc(o.note)}</div>` : ''}
 <div class="footer c">
   <p class="b">${esc(s.receiptFooter)}</p>
@@ -112,8 +136,10 @@ export function kitchenHtml(o: PlacedOrder, s: Settings): string {
     .map(
       (l) => `
 <div class="item lg"><span class="q">${l.qty}</span><span class="n b">${esc(l.name)}</span></div>${
-        l.note ? `<div class="note b">&gt;&gt; ${esc(l.note).toUpperCase()}</div>` : ''
-      }`,
+        (l.mods ?? [])
+          .map((m) => `<div class="note b">+ ${esc(m.name).toUpperCase()}</div>`)
+          .join('')
+      }${l.note ? `<div class="note b">&gt;&gt; ${esc(l.note).toUpperCase()}</div>` : ''}`,
     )
     .join('')
   const qty = o.lines.reduce((n, l) => n + l.qty, 0)

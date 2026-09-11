@@ -1,6 +1,48 @@
-import { Banknote, CreditCard, Receipt, ScanLine, ShoppingBag, TrendingUp } from 'lucide-react'
-import { formatMoney } from '../data/menu'
-import type { PlacedOrder } from '../store'
+import { Banknote, CreditCard, FileDown, Receipt, ScanLine, ShoppingBag, TrendingUp } from 'lucide-react'
+import { formatMoney, modsTotal } from '../data/menu'
+import { exportCsv, type PlacedOrder } from '../store'
+
+/** Payment components of an order — split-aware, legacy-fallback. */
+const paymentsOf = (o: PlacedOrder) =>
+  o.payments?.length ? o.payments : [{ method: o.payment, amount: o.total, tendered: o.tendered, change: o.change }]
+
+const refundedOf = (o: PlacedOrder) =>
+  o.refunds?.length ? o.refunds.reduce((s, r) => s + r.amount, 0) : o.status === 'refunded' ? o.total : 0
+
+/** End-of-day Z-report CSV: one summary block + tender and tax breakdowns. */
+function zReportCsv(orders: PlacedOrder[], today: PlacedOrder[]): string {
+  const cell = (v: string | number) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))
+  const money = (c: number) => (c / 100).toFixed(2)
+  const out: string[] = []
+  out.push('KhadkaPOS Z-Report')
+  out.push(`date,${new Date().toLocaleDateString('en-CA')}`)
+  out.push('')
+  out.push('metric,today,all_time')
+  const sum = <T,>(xs: T[], f: (x: T) => number) => xs.reduce((s, x) => s + f(x), 0)
+  out.push(`orders,${today.length},${orders.length}`)
+  out.push(`gross_sales,${money(sum(today, (o) => o.total))},${money(sum(orders, (o) => o.total))}`)
+  out.push(`tax_collected,${money(sum(today, (o) => o.tax))},${money(sum(orders, (o) => o.tax))}`)
+  out.push(`discounts,${money(sum(today, (o) => o.discount))},${money(sum(orders, (o) => o.discount))}`)
+  out.push(`refunds,${money(sum(today, refundedOf))},${money(sum(orders, refundedOf))}`)
+  out.push('')
+  out.push('tender,amount_today,amount_all_time')
+  for (const m of ['cash', 'scan', 'credit'] as const)
+    out.push(
+      `${m},${money(sum(today, (o) => sum(paymentsOf(o).filter((p) => p.method === m), (p) => p.amount)))},${money(sum(orders, (o) => sum(paymentsOf(o).filter((p) => p.method === m), (p) => p.amount)))}`,
+    )
+  out.push('')
+  out.push('tax_class,rate,amount_all_time')
+  const tb = new Map<string, { rate: number; amount: number }>()
+  orders.forEach((o) =>
+    (o.taxBreakdown ?? []).forEach((t) => {
+      const e = tb.get(t.name) ?? { rate: t.rate, amount: 0 }
+      e.amount += t.amount
+      tb.set(t.name, e)
+    }),
+  )
+  tb.forEach((v, name) => out.push(`${cell(name)},${(v.rate * 100).toFixed(2)}%,${money(v.amount)}`))
+  return out.join('\r\n')
+}
 
 interface Props {
   orders: PlacedOrder[]
@@ -11,14 +53,19 @@ export default function ReportPage({ orders }: Props) {
   const todayStr = new Date().toDateString()
   const todayOrders = valid.filter((o) => new Date(o.createdAt).toDateString() === todayStr)
 
-  const gross = valid.reduce((s, o) => s + o.total, 0)
-  const todayGross = todayOrders.reduce((s, o) => s + o.total, 0)
+  const refunded = orders.reduce((s, o) => s + refundedOf(o), 0)
+  // gross minus partial-refund amounts (fully refunded orders are excluded by `valid`)
+  const gross = valid.reduce((s, o) => s + o.total - (o.status === 'partial-refund' ? refundedOf(o) : 0), 0)
+  const todayGross = todayOrders.reduce((s, o) => s + o.total - (o.status === 'partial-refund' ? refundedOf(o) : 0), 0)
   const tax = valid.reduce((s, o) => s + o.tax, 0)
-  const refunded = orders.filter((o) => o.status === 'refunded').reduce((s, o) => s + o.total, 0)
   const avg = valid.length ? Math.round(gross / valid.length) : 0
 
+  // tender totals from payment components (split-aware)
   const byTender = (m: PlacedOrder['payment']) =>
-    valid.filter((o) => o.payment === m).reduce((s, o) => s + o.total, 0)
+    valid.reduce(
+      (s, o) => s + paymentsOf(o).filter((p) => p.method === m).reduce((a, p) => a + p.amount, 0),
+      0,
+    )
 
   // sales by hour
   const hours = new Map<number, number>()
@@ -33,8 +80,9 @@ export default function ReportPage({ orders }: Props) {
   const itemCount = new Map<string, { qty: number; revenue: number }>()
   valid.forEach((o) =>
     o.lines.forEach((l) => {
+      const unit = l.price + modsTotal(l.mods)
       const e = itemCount.get(l.name) ?? { qty: 0, revenue: 0 }
-      itemCount.set(l.name, { qty: e.qty + l.qty, revenue: e.revenue + l.qty * l.price })
+      itemCount.set(l.name, { qty: e.qty + l.qty, revenue: e.revenue + l.qty * unit })
     }),
   )
   const top = [...itemCount.entries()].sort((a, b) => b[1].qty - a[1].qty).slice(0, 5)
@@ -64,6 +112,19 @@ export default function ReportPage({ orders }: Props) {
           </p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={() =>
+              void exportCsv(
+                `khadkapos-zreport-${new Date().toISOString().slice(0, 10)}.csv`,
+                zReportCsv(valid, todayOrders),
+              )
+            }
+            title="End-of-day Z-report as CSV for accounting"
+            className="flex items-center gap-2 self-center rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-[12.5px] font-extrabold text-neutral-600 shadow-sm transition-colors hover:border-primary hover:text-primary"
+          >
+            <FileDown size={15} />
+            Z-Report CSV
+          </button>
           <div className="rounded-2xl bg-white px-5 py-3 shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Today</p>
             <p className="text-[18px] font-extrabold">{formatMoney(todayGross)}</p>

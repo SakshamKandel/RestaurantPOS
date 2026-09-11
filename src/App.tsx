@@ -7,8 +7,10 @@ import OrderPanel, {
   type PaymentMethod,
 } from './components/OrderPanel'
 import LoginScreen from './components/LoginScreen'
+import ModifierModal from './components/ModifierModal'
 import PaymentModal from './components/PaymentModal'
 import ReceiptModal from './components/ReceiptModal'
+import RefundModal from './components/RefundModal'
 import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
 import MenuPage from './pages/MenuPage'
@@ -23,13 +25,17 @@ import {
   assignableRoles,
   canManage,
   formatMoney,
+  lineKey,
   migrateSettings,
+  modsTotal,
+  SUPER_ADMIN,
   type Category,
   type CategoryId,
   type Customer,
   type MenuItem,
   type OrderStatus,
   type Role,
+  type SelectedMod,
   type Staff,
 } from './data/menu'
 import {
@@ -38,6 +44,7 @@ import {
   detectPrinters,
   initialState,
   installUpdate,
+  isDesktop,
   loadPersisted,
   onUpdateAvailable,
   onUpdateChecking,
@@ -48,14 +55,18 @@ import {
   printDocument,
   printRaw,
   drawerKickBytes,
+  setPinSecure,
   timeAgo,
+  verifyLogin,
   type DetectedPrinter,
   type Discount,
   type DocType,
   type HeldOrder,
   type MovementType,
   type OrderType,
+  type PaymentRecord,
   type PlacedOrder,
+  type RefundRecord,
   type PosState,
   type PrintJob,
   type PrinterRole,
@@ -92,8 +103,13 @@ export default function App() {
   const [payment, setPayment] = useState<PaymentMethod>('scan')
   const [payOpen, setPayOpen] = useState(false)
   const [receipt, setReceipt] = useState<PlacedOrder | null>(null)
+  const [refundFor, setRefundFor] = useState<PlacedOrder | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
+  const stateRef = useRef(state)
+  stateRef.current = state
+  const loadedRef = useRef(loaded)
+  loadedRef.current = loaded
   const [printers, setPrinters] = useState<DetectedPrinter[]>([])
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [version, setVersion] = useState('')
@@ -128,10 +144,31 @@ export default function App() {
     })
   }, [])
 
-  // Persist on every change after load (main process auto-rotates backups)
+  // Debounced persist — SQLite commit diffs rows, and rapid renderer updates
+  // (typing, cart edits) batch into one IPC call. flushPersist() forces the
+  // pending write through immediately (sign-out, window close) so auth always
+  // sees the latest staff PINs.
+  const persistDirty = useRef(false)
+  const flushPersist = () => {
+    if (loadedRef.current && persistDirty.current) {
+      persistDirty.current = false
+      persist(stateRef.current)
+    }
+  }
   useEffect(() => {
-    if (loaded) persist(state)
+    if (!loaded) return
+    persistDirty.current = true
+    const t = window.setTimeout(() => {
+      persistDirty.current = false
+      persist(stateRef.current)
+    }, 400)
+    return () => window.clearTimeout(t)
   }, [state, loaded])
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushPersist)
+    return () => window.removeEventListener('beforeunload', flushPersist)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Keep the active category valid as categories are created/renamed/deleted
   useEffect(() => {
@@ -276,9 +313,46 @@ export default function App() {
   }
 
   // ---------- Cart ----------
-  const add = (id: string) => setCart((c) => ({ ...c, [id]: { qty: 1 } }))
+  const [modItem, setModItem] = useState<MenuItem | null>(null)
+
+  const add = (id: string) => {
+    const item = state.menu.find((m) => m.id === id)
+    if (!item) return
+    if (item.stock === 0) return flash(`${item.name} is out of stock`)
+    if (item.modifiers?.length) return setModItem(item)
+    setCart((c) => {
+      const next = (c[id]?.qty ?? 0) + 1
+      if (item.stock !== undefined && next > item.stock) {
+        flash(`Only ${item.stock} × ${item.name} left in stock`)
+        return c
+      }
+      return { ...c, [id]: { itemId: id, qty: next } }
+    })
+  }
+  /** Confirmed modifier selection → its own cart line (same combo merges). */
+  const addWithMods = (item: MenuItem, mods: SelectedMod[]) => {
+    const key = lineKey(item.id, mods)
+    setCart((c) => {
+      const next = (c[key]?.qty ?? 0) + 1
+      if (item.stock !== undefined && next > item.stock) {
+        flash(`Only ${item.stock} × ${item.name} left in stock`)
+        return c
+      }
+      return { ...c, [key]: { itemId: item.id, qty: next, mods } }
+    })
+    setModItem(null)
+  }
   const increment = (id: string) =>
-    setCart((c) => ({ ...c, [id]: { ...c[id], qty: (c[id]?.qty ?? 0) + 1 } }))
+    setCart((c) => {
+      const entry = c[id]
+      if (!entry) return c
+      const item = state.menu.find((m) => m.id === entry.itemId)
+      if (item?.stock !== undefined && entry.qty + 1 > item.stock) {
+        flash(`Only ${item.stock} × ${item.name} left in stock`)
+        return c
+      }
+      return { ...c, [id]: { ...entry, qty: entry.qty + 1 } }
+    })
   const decrement = (id: string) =>
     setCart((c) => {
       const next = { ...c }
@@ -305,20 +379,56 @@ export default function App() {
 
   const lines: CartLine[] = useMemo(
     () =>
-      state.menu.filter((m) => cart[m.id]).map((m) => ({
-        item: m,
-        qty: cart[m.id].qty,
-        note: cart[m.id].note,
-      })),
+      Object.entries(cart).flatMap(([key, l]) => {
+        const item = state.menu.find((m) => m.id === l.itemId)
+        return item ? [{ key, item, qty: l.qty, note: l.note, mods: l.mods }] : []
+      }),
     [cart, state.menu],
   )
-  const subtotal = lines.reduce((s, l) => s + l.item.price * l.qty, 0)
+  const lineGross = (l: CartLine) => (l.item.price + modsTotal(l.mods)) * l.qty
+  const subtotal = lines.reduce((s, l) => s + lineGross(l), 0)
   const discountCents = !discount
     ? 0
     : discount.type === 'percent'
       ? Math.round((subtotal * Math.min(discount.value, 100)) / 100)
       : Math.min(Math.round(discount.value), subtotal)
-  const tax = Math.round((subtotal - discountCents) * state.settings.taxRate)
+
+  // Per-item tax classes: the post-discount net is distributed across lines in
+  // exact cents (largest remainder), then each line is taxed at its own rate.
+  const netTotal = subtotal - discountCents
+  const lineNets = useMemo(() => {
+    if (!subtotal) return lines.map(() => 0)
+    const raw = lines.map((l) => (lineGross(l) * netTotal) / subtotal)
+    const nets = raw.map(Math.floor)
+    let rem = netTotal - nets.reduce((a, b) => a + b, 0)
+    const order = raw
+      .map((r, i) => [r - nets[i], i] as const)
+      .sort((a, b) => b[0] - a[0])
+    for (let k = 0; rem > 0 && order.length; k = (k + 1) % order.length) {
+      nets[order[k][1]]++
+      rem--
+    }
+    return nets
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, subtotal, netTotal])
+  const rateFor = (item: MenuItem) =>
+    state.settings.taxClasses.find((t) => t.id === item.taxClass)?.rate ??
+    state.settings.taxRate
+  const lineTaxes = lines.map((l, i) => Math.round(lineNets[i] * rateFor(l.item)))
+  const tax = lineTaxes.reduce((a, b) => a + b, 0)
+  const taxBreakdown = useMemo(() => {
+    const map = new Map<string, { name: string; rate: number; amount: number }>()
+    lines.forEach((l, i) => {
+      const cls = state.settings.taxClasses.find((t) => t.id === l.item.taxClass)
+      const name = cls?.name ?? 'Standard'
+      const rate = cls?.rate ?? state.settings.taxRate
+      const cur = map.get(`${name}|${rate}`) ?? { name, rate, amount: 0 }
+      cur.amount += lineTaxes[i]
+      map.set(`${name}|${rate}`, cur)
+    })
+    return [...map.values()].filter((t) => t.amount > 0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, lineTaxes, state.settings.taxClasses, state.settings.taxRate])
   const total = subtotal - discountCents + tax
 
   const notifications = useMemo(() => {
@@ -329,11 +439,19 @@ export default function App() {
     if (pending) n.push({ id: 'jp', title: `${pending} job${pending > 1 ? 's' : ''} printing`, sub: 'Queued to thermal printers', tone: 'info' })
     if (user && !state.shifts.some((s) => s.closedAt === null))
       n.push({ id: 'shift', title: 'No shift open', sub: 'Open a shift to track the cash drawer', tone: 'warn' })
+    const lowStock = state.menu.filter((m) => m.stock !== undefined && m.stock <= (m.lowStockAt ?? 5))
+    if (lowStock.length)
+      n.push({
+        id: 'stock',
+        title: `${lowStock.length} item${lowStock.length > 1 ? 's' : ''} low on stock`,
+        sub: lowStock.slice(0, 3).map((m) => `${m.name} (${m.stock} left)`).join(', ') + (lowStock.length > 3 ? '…' : ''),
+        tone: 'warn',
+      })
     state.audit.slice(0, 3).forEach((e) =>
       n.push({ id: e.id, title: e.action, sub: `${e.detail} · ${e.actor}`, tone: 'info' }),
     )
     return n
-  }, [state.printJobs, state.shifts, state.audit, user])
+  }, [state.printJobs, state.shifts, state.audit, state.menu, user])
 
   const todaySales = state.orders
     .filter(
@@ -372,22 +490,35 @@ export default function App() {
   const allLineOrders = liveLineOrders
 
   // ---------- Actions ----------
-  const placeOrder = (method: PaymentMethod, tendered: number, change: number) => {
+  const placeOrder = (method: PaymentMethod, tendered: number, change: number, payments: PaymentRecord[]) => {
     const customer = state.customers.find((c) => c.id === customerId)
     const order: PlacedOrder = {
       id: uid(),
       number: `#${state.settings.orderPrefix}${String(state.seq).padStart(3, '0')}`,
       type: orderType,
       customer: customer?.name ?? 'Walk-in',
-      lines: lines.map((l) => ({ name: l.item.name, qty: l.qty, price: l.item.price, note: l.note })),
+      lines: lines.map((l, i) => ({
+        name: l.item.name,
+        qty: l.qty,
+        price: l.item.price,
+        note: l.note,
+        mods: l.mods,
+        taxClass: l.item.taxClass,
+        taxRate: rateFor(l.item),
+        itemId: l.item.id,
+        tax: lineTaxes[i],
+        net: lineNets[i],
+      })),
       subtotal,
       discount: discountCents,
       tax,
+      taxBreakdown,
       total,
       note: orderNote || undefined,
       payment: method,
       tendered,
       change,
+      payments,
       status: 'new',
       createdAt: Date.now(),
       cashier: user?.name ?? 'Unknown',
@@ -396,6 +527,13 @@ export default function App() {
       ...s,
       orders: [order, ...s.orders],
       seq: s.seq + 1,
+      // deduct tracked stock; hitting 0 auto-marks the item sold out
+      menu: s.menu.map((m) => {
+        const sold = lines.filter((l) => l.item.id === m.id).reduce((n, l) => n + l.qty, 0)
+        if (m.stock === undefined || !sold) return m
+        const stock = Math.max(0, m.stock - sold)
+        return { ...m, stock, available: stock === 0 ? false : m.available }
+      }),
       customers: s.customers.map((c) =>
         c.id === customerId
           ? { ...c, visits: c.visits + 1, spent: c.spent + total }
@@ -403,10 +541,10 @@ export default function App() {
       ),
     }))
     const st = state.settings
-    const kick = method === 'cash' && st.cashDrawer && st.drawerOnCash
+    const kick = payments.some((p) => p.method === 'cash') && st.cashDrawer && st.drawerOnCash
     enqueueJobs(order, kick) // kitchen ticket → chef printer · receipt (+drawer pulse) → billing printer
     setLastOrder(order)
-    audit('order.completed', `${order.number} · ${method} · ${(total / 100).toFixed(2)}`)
+    audit('order.completed', `${order.number} · ${payments.length > 1 ? `split(${payments.map((p) => p.method).join('+')})` : method} · ${(total / 100).toFixed(2)}`)
     setCart({})
     setDiscount(null)
     setOrderNote('')
@@ -428,7 +566,7 @@ export default function App() {
       label: `${customer && customer.id !== 'c5' ? customer.name : TYPE_LABEL[orderType]} · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
       type: orderType,
       customer: customer?.name ?? 'Walk-in',
-      lines: lines.map((l) => ({ itemId: l.item.id, qty: l.qty, note: l.note })),
+      lines: lines.map((l) => ({ itemId: l.item.id, qty: l.qty, note: l.note, mods: l.mods })),
       createdAt: Date.now(),
     }
     setState((s) => ({ ...s, held: [held, ...s.held] }))
@@ -444,8 +582,9 @@ export default function App() {
     let dropped = 0
     h.lines.forEach((l) => {
       if (!state.menu.some((m) => m.id === l.itemId)) return void dropped++
-      const cur = next[l.itemId]
-      next[l.itemId] = { qty: (cur?.qty ?? 0) + l.qty, note: l.note ?? cur?.note }
+      const key = lineKey(l.itemId, l.mods)
+      const cur = next[key]
+      next[key] = { itemId: l.itemId, qty: (cur?.qty ?? 0) + l.qty, note: l.note ?? cur?.note, mods: l.mods ?? cur?.mods }
     })
     setCart(next)
     setOrderType(h.type)
@@ -465,28 +604,85 @@ export default function App() {
       ),
     }))
 
-  const refundOrder = (id: string) => {
+  /** Refund selected line quantities. Full refund = every refundable unit. */
+  const refundOrder = (id: string, sel: { index: number; qty: number }[], reason?: string) => {
     const o = state.orders.find((x) => x.id === id)
-    if (!o) return
-    if (o.status === 'refunded') return flash(`${o.number} was already refunded`)
+    if (!o || o.status === 'refunded') return
+    const picked = sel.filter((s) => s.qty > 0 && o.lines[s.index])
+    if (!picked.length) return
+
+    const effRate = o.subtotal - o.discount > 0 ? o.tax / (o.subtotal - o.discount) : 0
+    const detail = picked.map(({ index, qty }) => {
+      const l = o.lines[index]
+      const gross = (l.price + modsTotal(l.mods)) * l.qty
+      const net = l.net ?? Math.round((gross * Math.max(0, o.subtotal - o.discount)) / Math.max(1, o.subtotal))
+      const lt = l.tax ?? Math.round(net * (l.taxRate ?? effRate))
+      const q = Math.min(qty, l.qty - (l.refundedQty ?? 0))
+      return { index, name: l.name, qty: q, amount: Math.round(((net + lt) * q) / l.qty) }
+    })
+    const amount = detail.reduce((s, d) => s + d.amount, 0)
+    const record: RefundRecord = {
+      id: uid(),
+      at: Date.now(),
+      actor: user?.name ?? 'Unknown',
+      lines: detail,
+      amount,
+      reason: reason || undefined,
+    }
+    const fullyRefunded = o.lines.every(
+      (l, i) => (l.refundedQty ?? 0) + (detail.find((d) => d.index === i)?.qty ?? 0) >= l.qty,
+    )
+
     setState((s) => ({
       ...s,
-      orders: s.orders.map((x) => (x.id === id ? { ...x, status: 'refunded' } : x)),
+      orders: s.orders.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              status: fullyRefunded ? 'refunded' : 'partial-refund',
+              refunds: [...(x.refunds ?? []), record],
+              lines: x.lines.map((l, i) => ({
+                ...l,
+                refundedQty: (l.refundedQty ?? 0) + (detail.find((d) => d.index === i)?.qty ?? 0),
+              })),
+            }
+          : x,
+      ),
+      // stock comes back onto the shelf; re-list items that had sold out at 0
+      menu: s.menu.map((m) => {
+        const back = detail
+          .filter((d) => o.lines[d.index].itemId === m.id)
+          .reduce((n, d) => n + d.qty, 0)
+        if (!back || m.stock === undefined) return m
+        const stock = m.stock + back
+        return { ...m, stock, available: m.stock === 0 ? true : m.available }
+      }),
       // roll back the customer's lifetime stats so reports stay truthful
       customers: s.customers.map((c) =>
         c.name === o.customer && c.id !== 'c5'
-          ? { ...c, visits: Math.max(0, c.visits - 1), spent: Math.max(0, c.spent - o.total) }
+          ? {
+              ...c,
+              visits: fullyRefunded ? Math.max(0, c.visits - 1) : c.visits,
+              spent: Math.max(0, c.spent - amount),
+            }
           : c,
       ),
     }))
-    audit('order.refunded', `${o.number} · ${o.payment} · ${(o.total / 100).toFixed(2)}`)
+    audit(
+      'order.refunded',
+      `${o.number} · ${detail.map((d) => `${d.qty}× ${d.name}`).join(', ')} · ${formatMoney(amount)}${reason ? ` · ${reason}` : ''}`,
+    )
     // cash refunds hand money back — open the drawer if one is connected
-    if (o.payment === 'cash' && state.settings.cashDrawer && !roleProblem('billing')) {
+    const hadCash = (o.payments?.length ? o.payments : [{ method: o.payment } as PaymentRecord]).some(
+      (p) => p.method === 'cash',
+    )
+    if (hadCash && state.settings.cashDrawer && !roleProblem('billing')) {
       queueJob('DRAWER KICK', 'billing', o.number)
-      flash(`${o.number} refunded · drawer opened for ${formatMoney(o.total)} cash back`)
+      flash(`${o.number} refunded · drawer opened for ${formatMoney(amount)} cash back`)
     } else {
-      flash(`${o.number} refunded · ${formatMoney(o.total)}`)
+      flash(`${o.number} refunded · ${formatMoney(amount)}`)
     }
+    setRefundFor(null)
   }
 
   // ---------- Shift & cash drawer ----------
@@ -585,6 +781,20 @@ export default function App() {
       ...s,
       menu: s.menu.map((m) => (m.id === id ? { ...m, available: !m.available } : m)),
     }))
+
+  /** Manual stock adjustment — auto marks sold-out at 0 / available when restocked. */
+  const adjustStock = (id: string, delta: number, reason: string) => {
+    const item = state.menu.find((m) => m.id === id)
+    if (!item || item.stock === undefined) return
+    const next = Math.max(0, item.stock + delta)
+    setState((s) => ({
+      ...s,
+      menu: s.menu.map((m) =>
+        m.id === id ? { ...m, stock: next, available: next === 0 ? false : m.available || next > 0 } : m,
+      ),
+    }))
+    audit('stock.adjusted', `${item.name}: ${item.stock} → ${next} (${reason})`)
+  }
 
   const saveCategory = (c: Category) =>
     setState((s) => ({
@@ -732,6 +942,7 @@ export default function App() {
       <>
       <LoginScreen
         staff={state.staff}
+        onVerify={(id, pin) => verifyLogin(id, pin, state.staff)}
         onSetup={(name, pin) => {
           const admin: Staff = {
             id: uid(),
@@ -757,8 +968,16 @@ export default function App() {
         }}
         onLogin={(s, newPin) => {
           const firstSetup = !!newPin
-          const member = newPin ? { ...s, pin: newPin, mustChangePin: false } : s
-          if (newPin) updateStaff(s.id, { pin: newPin, mustChangePin: false })
+          // On desktop the PIN goes straight to the main-process hash store;
+          // plaintext never sits in renderer state. Browser preview keeps it
+          // in state so its local verify works.
+          const member = newPin
+            ? { ...s, pin: isDesktop ? '' : newPin, mustChangePin: false }
+            : s
+          if (newPin) {
+            if (isDesktop) void setPinSecure(s.id, newPin)
+            updateStaff(s.id, isDesktop ? { mustChangePin: false } : { pin: newPin, mustChangePin: false })
+          }
           setUser(member)
           setState((st) => ({
             ...st,
@@ -785,6 +1004,7 @@ export default function App() {
         userName={user.name}
         onNavigate={setView}
         onLogout={() => {
+          flushPersist() // auth reads SQLite — land pending PIN/staff writes first
           setUser(null)
           setView('dashboard')
         }}
@@ -819,6 +1039,7 @@ export default function App() {
               notifications={notifications}
               onSignOut={() => {
                 audit('auth.logout', `${user.name} signed out`)
+                flushPersist()
                 setUser(null)
               }}
               onOpenStaff={() => setView('staff')}
@@ -878,11 +1099,13 @@ export default function App() {
         <MenuPage
           menu={state.menu}
           categories={state.categories}
+          taxClasses={state.settings.taxClasses}
           onSave={saveMenuItem}
           onDelete={deleteMenuItem}
           onToggle={toggleMenuItem}
           onSaveCategory={saveCategory}
           onDeleteCategory={deleteCategory}
+          onStock={adjustStock}
         />
       )}
       {view === 'printers' && (
@@ -907,7 +1130,7 @@ export default function App() {
       {view === 'transactions' && (
         <TransactionsPage
           orders={state.orders}
-          onRefund={refundOrder}
+          onRefund={setRefundFor}
           onAdvance={advanceOrder}
           onReprint={reprintReceipt}
         />
@@ -934,6 +1157,11 @@ export default function App() {
           onUpdate={editStaff}
           onResetPin={resetStaffPin}
           onToggleActive={toggleStaffActive}
+          onAdminPin={(pin) => {
+            void setPinSecure(SUPER_ADMIN.id, pin)
+            audit('staff.admin_pin_changed', 'administrator PIN updated')
+            flash('Administrator PIN updated')
+          }}
         />
       )}
       {view === 'settings' && (
@@ -970,6 +1198,13 @@ export default function App() {
         />
       )}
 
+      {modItem && (
+        <ModifierModal
+          item={modItem}
+          onClose={() => setModItem(null)}
+          onConfirm={(mods) => addWithMods(modItem, mods)}
+        />
+      )}
       {payOpen && (
         <PaymentModal
           total={total}
@@ -977,6 +1212,13 @@ export default function App() {
           onMethodChange={setPayment}
           onClose={() => setPayOpen(false)}
           onComplete={placeOrder}
+        />
+      )}
+      {refundFor && (
+        <RefundModal
+          order={refundFor}
+          onClose={() => setRefundFor(null)}
+          onConfirm={(sel, reason) => refundOrder(refundFor.id, sel, reason)}
         />
       )}
       {receipt && (

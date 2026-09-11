@@ -26,11 +26,14 @@ interface Props {
   onUpdate: (id: string, patch: Partial<Staff>) => void
   onResetPin: (id: string) => string
   onToggleActive: (id: string) => void
+  /** Change the hidden administrator's own PIN (admin only). */
+  onAdminPin?: (pin: string) => void
 }
 
-export default function StaffPage({ staff, currentUserId, currentRole, onAdd, onUpdate, onResetPin, onToggleActive }: Props) {
+export default function StaffPage({ staff, currentUserId, currentRole, onAdd, onUpdate, onResetPin, onToggleActive, onAdminPin }: Props) {
   const [form, setForm] = useState<StaffForm | null>(null)
   const [tempPin, setTempPin] = useState<{ name: string; pin: string } | null>(null)
+  const [adminPins, setAdminPins] = useState<{ a: string; b: string } | null>(null)
   const roles = assignableRoles(currentRole)
   // Nobody administers their own account; managers only handle front-line staff.
   const mayManage = (s: Staff) => s.id !== currentUserId && canManage(currentRole, s.role)
@@ -65,6 +68,24 @@ export default function StaffPage({ staff, currentUserId, currentRole, onAdd, on
           Add Staff
         </button>
       </header>
+
+      {isAdmin && onAdminPin && (
+        <div className="mt-5 flex items-center justify-between rounded-3xl bg-neutral-900 px-5 py-4 text-white shadow-sm">
+          <div>
+            <p className="text-[13px] font-extrabold">Administrator account</p>
+            <p className="text-[11px] font-medium text-neutral-400">
+              Hidden owner login — not listed here and never shown to staff. Change its PIN regularly.
+            </p>
+          </div>
+          <button
+            onClick={() => setAdminPins({ a: '', b: '' })}
+            className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-[12px] font-extrabold hover:bg-white/15"
+          >
+            <KeyRound size={14} />
+            Change admin PIN
+          </button>
+        </div>
+      )}
 
       <div className="mt-5 overflow-hidden rounded-3xl bg-white shadow-sm">
         <table className="w-full text-left">
@@ -201,6 +222,50 @@ export default function StaffPage({ staff, currentUserId, currentRole, onAdd, on
               className="mt-5 w-full rounded-xl bg-primary py-3 text-[13px] font-extrabold text-white shadow-md shadow-orange-500/25 hover:bg-primary-dark disabled:opacity-40"
             >
               {form.id ? 'Save Changes' : 'Create Account'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Admin PIN change */}
+      {adminPins && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-[360px] rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <p className="text-[15px] font-extrabold">Change administrator PIN</p>
+              <button onClick={() => setAdminPins(null)} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
+                <X size={17} />
+              </button>
+            </div>
+            <div className="mt-4 flex flex-col gap-3">
+              <input
+                autoFocus
+                value={adminPins.a}
+                onChange={(e) => setAdminPins({ ...adminPins, a: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                placeholder="New PIN (4–6 digits)"
+                inputMode="numeric"
+                className="rounded-xl border border-neutral-200 px-3.5 py-2.5 text-center text-[15px] font-extrabold tracking-[0.4em] outline-none focus:border-primary"
+              />
+              <input
+                value={adminPins.b}
+                onChange={(e) => setAdminPins({ ...adminPins, b: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                placeholder="Confirm new PIN"
+                inputMode="numeric"
+                className="rounded-xl border border-neutral-200 px-3.5 py-2.5 text-center text-[15px] font-extrabold tracking-[0.4em] outline-none focus:border-primary"
+              />
+              {adminPins.a && adminPins.b && adminPins.a !== adminPins.b && (
+                <p className="text-center text-[11px] font-bold text-red-500">PINs do not match</p>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                onAdminPin?.(adminPins.a)
+                setAdminPins(null)
+              }}
+              disabled={!/^\d{4,6}$/.test(adminPins.a) || adminPins.a !== adminPins.b}
+              className="mt-5 w-full rounded-xl bg-primary py-3 text-[13px] font-extrabold text-white hover:bg-primary-dark disabled:opacity-40"
+            >
+              Save new PIN
             </button>
           </div>
         </div>

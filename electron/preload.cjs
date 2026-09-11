@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('pos', {
   printDoc: (payload) => ipcRenderer.invoke('printers:print', payload),
   printRaw: (payload) => ipcRenderer.invoke('printers:raw', payload),
   pickImage: () => ipcRenderer.invoke('images:pick'),
+  integrity: () => ipcRenderer.invoke('store:integrity'),
+  login: (id, pin) => ipcRenderer.invoke('auth:login', { id, pin }),
+  setPin: (id, pin) => ipcRenderer.invoke('auth:set-pin', { id, pin }),
+  exportCsv: (payload) => ipcRenderer.invoke('export:csv', payload),
   // updates
   appVersion: () => ipcRenderer.invoke('app:version'),
   checkUpdates: () => ipcRenderer.invoke('update:check'),

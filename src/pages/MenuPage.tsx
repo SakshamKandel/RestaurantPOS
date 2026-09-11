@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderCog, ImagePlus, Pencil, Plus, Search, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react'
+import { FolderCog, ImagePlus, Package, Pencil, Plus, Search, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react'
 import { pickImage } from '../store'
 import {
   formatMoney,
@@ -9,7 +9,11 @@ import {
   type CategoryId,
   type IconName,
   type MenuItem,
+  type ModifierGroup,
+  type TaxClass,
 } from '../data/menu'
+
+const uid = () => Math.random().toString(36).slice(2, 9)
 
 interface ItemForm {
   id: string | null
@@ -19,6 +23,10 @@ interface ItemForm {
   available: boolean
   image: string
   emoji: string
+  taxClass: string // '' = store default rate
+  stock: string // '' = not tracked
+  lowStockAt: string
+  modifiers: ModifierGroup[]
 }
 
 const emptyForm = (category: CategoryId): ItemForm => ({
@@ -29,19 +37,26 @@ const emptyForm = (category: CategoryId): ItemForm => ({
   available: true,
   image: '',
   emoji: '🍽️',
+  taxClass: '',
+  stock: '',
+  lowStockAt: '5',
+  modifiers: [],
 })
 
 interface Props {
   menu: MenuItem[]
   categories: Category[]
+  taxClasses: TaxClass[]
   onSave: (item: MenuItem) => void
   onDelete: (id: string) => void
   onToggle: (id: string) => void
   onSaveCategory: (c: Category) => void
   onDeleteCategory: (id: string) => void
+  /** Adjust tracked stock for an item (inventory). */
+  onStock?: (id: string, delta: number, reason: string) => void
 }
 
-export default function MenuPage({ menu, categories, onSave, onDelete, onToggle, onSaveCategory, onDeleteCategory }: Props) {
+export default function MenuPage({ menu, categories, taxClasses, onSave, onDelete, onToggle, onSaveCategory, onDeleteCategory, onStock }: Props) {
   const [query, setQuery] = useState('')
   const [catFilter, setCatFilter] = useState<CategoryId | 'all'>('all')
   const [form, setForm] = useState<ItemForm | null>(null)
@@ -68,23 +83,38 @@ export default function MenuPage({ menu, categories, onSave, onDelete, onToggle,
       available: m.available,
       image: m.image,
       emoji: m.emoji,
+      taxClass: m.taxClass ?? '',
+      stock: m.stock === undefined ? '' : String(m.stock),
+      lowStockAt: String(m.lowStockAt ?? 5),
+      modifiers: (m.modifiers ?? []).map((g) => ({ ...g, options: g.options.map((o) => ({ ...o })) })),
     })
 
   const submit = () => {
     if (!form || !form.name.trim() || !form.price) return
     const cents = Math.round(parseFloat(form.price) * 100)
     if (Number.isNaN(cents) || cents < 0) return
+    const stock = form.stock.trim() === '' ? undefined : Math.max(0, Math.round(parseInt(form.stock, 10) || 0))
     onSave({
       id: form.id ?? `item-${Date.now()}`,
       name: form.name.trim(),
       price: cents,
       category: form.category,
-      available: form.available,
+      // tracked stock hitting 0 auto-marks sold out
+      available: stock === 0 ? false : form.available,
       image: form.image.trim(), // '' → emoji tile; never fetch a placeholder from the internet
       emoji: form.emoji.trim() || '🍽️',
+      taxClass: form.taxClass || undefined,
+      stock,
+      lowStockAt: stock === undefined ? undefined : Math.max(0, parseInt(form.lowStockAt, 10) || 0),
+      modifiers: form.modifiers
+        .filter((g) => g.name.trim() && g.options.length)
+        .map((g) => ({ ...g, name: g.name.trim(), options: g.options.filter((o) => o.name.trim()) })),
     })
     setForm(null)
   }
+
+  const setGroup = (gi: number, patch: Partial<ModifierGroup>) =>
+    setForm((f) => f && ({ ...f, modifiers: f.modifiers.map((g, i) => (i === gi ? { ...g, ...patch } : g)) }))
 
   return (
     <div className="thin-scroll flex-1 overflow-y-auto px-6 pb-6">
@@ -150,6 +180,7 @@ export default function MenuPage({ menu, categories, onSave, onDelete, onToggle,
               <th className="px-5 py-3.5">Item</th>
               <th className="px-5 py-3.5">Category</th>
               <th className="px-5 py-3.5">Price</th>
+              <th className="px-5 py-3.5">Stock</th>
               <th className="px-5 py-3.5">Availability</th>
               <th className="px-5 py-3.5 text-right">Actions</th>
             </tr>
@@ -176,6 +207,30 @@ export default function MenuPage({ menu, categories, onSave, onDelete, onToggle,
                 </td>
                 <td className="px-5 py-3 text-[12.5px] font-extrabold text-primary">
                   {formatMoney(m.price)}
+                </td>
+                <td className="px-5 py-3">
+                  {m.stock === undefined ? (
+                    <span className="text-[11px] font-medium text-neutral-300">—</span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`text-[12.5px] font-extrabold ${
+                          m.stock === 0 ? 'text-red-500' : m.stock <= (m.lowStockAt ?? 5) ? 'text-amber-600' : 'text-neutral-700'
+                        }`}
+                      >
+                        {m.stock}
+                      </span>
+                      {onStock && (
+                        <span className="flex items-center rounded-md bg-neutral-100">
+                          <button onClick={() => onStock(m.id, -1, 'manual adjust')} className="px-1.5 py-0.5 text-neutral-500 hover:text-primary" title="Stock −1"><span className="text-[12px] font-extrabold">−</span></button>
+                          <button onClick={() => onStock(m.id, 1, 'manual adjust')} className="px-1.5 py-0.5 text-neutral-500 hover:text-primary" title="Stock +1"><Plus size={11} strokeWidth={3} /></button>
+                        </span>
+                      )}
+                      {m.stock <= (m.lowStockAt ?? 5) && m.stock > 0 && (
+                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-600">LOW</span>
+                      )}
+                    </span>
+                  )}
                 </td>
                 <td className="px-5 py-3">
                   <button
@@ -226,7 +281,7 @@ export default function MenuPage({ menu, categories, onSave, onDelete, onToggle,
       {/* Add / Edit modal */}
       {form && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-[400px] rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="thin-scroll max-h-[88vh] w-[480px] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between">
               <p className="text-[15px] font-extrabold">
                 {form.id ? 'Edit Item' : 'New Menu Item'}
@@ -297,6 +352,138 @@ export default function MenuPage({ menu, categories, onSave, onDelete, onToggle,
                 Available for sale
                 {form.available ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
               </button>
+
+              {/* Tax class */}
+              <div className="flex items-center gap-3">
+                <label className="w-24 shrink-0 text-[11.5px] font-bold text-neutral-500">Tax class</label>
+                <select
+                  value={form.taxClass}
+                  onChange={(e) => setForm({ ...form, taxClass: e.target.value })}
+                  className="flex-1 cursor-pointer rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[12.5px] font-medium outline-none"
+                >
+                  <option value="">Default rate</option>
+                  {taxClasses.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({(t.rate * 100).toFixed(2)}%)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Stock */}
+              <div className="flex items-center gap-3">
+                <label className="flex w-24 shrink-0 items-center gap-1.5 text-[11.5px] font-bold text-neutral-500">
+                  <Package size={13} /> Stock
+                </label>
+                <input
+                  value={form.stock}
+                  onChange={(e) => setForm({ ...form, stock: e.target.value.replace(/\D/g, '') })}
+                  placeholder="— not tracked"
+                  inputMode="numeric"
+                  className="flex-1 rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[12.5px] font-medium outline-none focus:border-primary"
+                />
+                <input
+                  value={form.lowStockAt}
+                  onChange={(e) => setForm({ ...form, lowStockAt: e.target.value.replace(/\D/g, '') })}
+                  placeholder="Low at"
+                  title="Warn when stock drops to this level"
+                  inputMode="numeric"
+                  disabled={form.stock.trim() === ''}
+                  className="w-20 rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[12.5px] font-medium outline-none focus:border-primary disabled:opacity-40"
+                />
+              </div>
+
+              {/* Modifier groups */}
+              <div className="rounded-2xl bg-neutral-50 p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11.5px] font-extrabold text-neutral-500">Modifiers / add-ons</p>
+                  <button
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        modifiers: [
+                          ...form.modifiers,
+                          { id: uid(), name: '', required: false, multi: false, options: [] },
+                        ],
+                      })
+                    }
+                    className="flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary-dark"
+                  >
+                    <Plus size={13} strokeWidth={3} /> Add group
+                  </button>
+                </div>
+                {form.modifiers.map((g, gi) => (
+                  <div key={g.id} className="mt-3 rounded-xl border border-neutral-200 bg-white p-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={g.name}
+                        onChange={(e) => setGroup(gi, { name: e.target.value })}
+                        placeholder="Group (e.g. Size, Extras)"
+                        className="flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[12px] font-bold outline-none focus:border-primary"
+                      />
+                      <button
+                        onClick={() => setGroup(gi, { required: !g.required })}
+                        title="Customer must pick at least one option"
+                        className={`rounded-lg px-2 py-1.5 text-[10px] font-bold ${g.required ? 'bg-primary-soft text-primary' : 'bg-neutral-100 text-neutral-400'}`}
+                      >
+                        Req
+                      </button>
+                      <button
+                        onClick={() => setGroup(gi, { multi: !g.multi })}
+                        title="Multi-select vs pick-one"
+                        className={`rounded-lg px-2 py-1.5 text-[10px] font-bold ${g.multi ? 'bg-primary-soft text-primary' : 'bg-neutral-100 text-neutral-400'}`}
+                      >
+                        Multi
+                      </button>
+                      <button
+                        onClick={() => setForm({ ...form, modifiers: form.modifiers.filter((_, i) => i !== gi) })}
+                        className="rounded-lg p-1.5 text-neutral-300 hover:text-red-500"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                    {g.options.map((o, oi) => (
+                      <div key={o.id} className="mt-2 flex items-center gap-2">
+                        <input
+                          value={o.name}
+                          onChange={(e) =>
+                            setGroup(gi, { options: g.options.map((x, i) => (i === oi ? { ...x, name: e.target.value } : x)) })
+                          }
+                          placeholder="Option name"
+                          className="flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[11.5px] font-medium outline-none focus:border-primary"
+                        />
+                        <input
+                          value={o.price === 0 ? '' : (o.price / 100).toString()}
+                          onChange={(e) => {
+                            const v = Math.round(parseFloat(e.target.value || '0') * 100)
+                            setGroup(gi, { options: g.options.map((x, i) => (i === oi ? { ...x, price: Number.isNaN(v) ? 0 : Math.max(0, v) } : x)) })
+                          }}
+                          placeholder="+0.00"
+                          inputMode="decimal"
+                          className="w-20 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-right text-[11.5px] font-medium outline-none focus:border-primary"
+                        />
+                        <button
+                          onClick={() => setGroup(gi, { options: g.options.filter((_, i) => i !== oi) })}
+                          className="rounded-lg p-1 text-neutral-300 hover:text-red-500"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setGroup(gi, { options: [...g.options, { id: uid(), name: '', price: 0 }] })}
+                      className="mt-2 flex items-center gap-1 text-[10.5px] font-bold text-neutral-400 hover:text-primary"
+                    >
+                      <Plus size={12} strokeWidth={3} /> Add option
+                    </button>
+                  </div>
+                ))}
+                {form.modifiers.length === 0 && (
+                  <p className="mt-2 text-[10.5px] font-medium text-neutral-400">
+                    e.g. Size (Small/Large), Extras (extra cheese +$1.50)
+                  </p>
+                )}
+              </div>
             </div>
             <button
               onClick={submit}

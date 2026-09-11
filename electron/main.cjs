@@ -3,6 +3,8 @@ const path = require('path')
 const fs = require('fs')
 const { pathToFileURL } = require('url')
 const { autoUpdater } = require('electron-updater')
+const db = require('./db.cjs')
+const auth = require('./auth.cjs')
 
 // Custom protocol so menu photos stored in userData render in <img> tags
 // in both dev (localhost) and packaged (file://) modes.
@@ -11,6 +13,8 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 const isDev = process.argv.includes('--dev')
+// Test hook: point the whole app at a scratch data dir (never used in normal runs)
+if (process.env.KPOS_USERDATA) app.setPath('userData', process.env.KPOS_USERDATA)
 
 const storePath = () => path.join(app.getPath('userData'), 'pos-store.json')
 const backupDir = () => path.join(app.getPath('userData'), 'backups')
@@ -70,43 +74,92 @@ function createWindow() {
 
 const ts = () => new Date().toISOString().replace(/[:.]/g, '-')
 
-/** Jobs left 'pending' at shutdown were never confirmed by the printer — mark failed. */
-function migratePendingJobs() {
-  try {
-    const data = JSON.parse(fs.readFileSync(storePath(), 'utf8'))
-    if (!Array.isArray(data.printJobs)) return
-    let dirty = false
-    data.printJobs = data.printJobs.map((j) => {
-      if (j.status === 'pending') {
-        dirty = true
-        return { ...j, status: 'failed' }
-      }
-      return j
-    })
-    if (dirty) fs.writeFileSync(storePath(), JSON.stringify(data))
-  } catch {}
-}
+// --- Durable local store: SQLite (WAL, transactional). JSON backups kept for
+//     human-readable recovery and cross-version compatibility. ---
+let lastBackupAt = 0
+const BACKUP_MIN_INTERVAL = 60_000 // at most one rotating backup per minute
 
-// --- Durable local store (JSON on disk; swap for SQLite later) ---
 ipcMain.handle('store:load', () => {
   try {
-    return JSON.parse(fs.readFileSync(storePath(), 'utf8'))
-  } catch {
+    const state = db.load()
+    if (!state) return null
+    // jobs left 'pending' at shutdown were never confirmed by the printer
+    state.printJobs = (state.printJobs ?? []).map((j) =>
+      j.status === 'pending' ? { ...j, status: 'failed', error: 'App closed before the printer confirmed' } : j,
+    )
+    return state
+  } catch (e) {
+    ulog(`store load failed ${e?.message ?? e}`)
     return null
   }
 })
 
 ipcMain.handle('store:save', (_e, data) => {
-  const tmp = storePath() + '.tmp'
-  fs.writeFileSync(tmp, JSON.stringify(data))
-  fs.renameSync(tmp, storePath())
-  rotateBackup(data) // automatic backup on every state save
+  db.commit(data)
+  if (Date.now() - lastBackupAt > BACKUP_MIN_INTERVAL) {
+    lastBackupAt = Date.now()
+    rotateBackup(db.exportJson())
+  }
   return true
 })
 
-ipcMain.handle('store:backup', (_e, data) => {
-  rotateBackup(data)
+ipcMain.handle('store:backup', () => {
+  rotateBackup(db.exportJson())
+  lastBackupAt = Date.now()
   return backupDir()
+})
+
+ipcMain.handle('store:integrity', () => ({ result: db.integrity(), file: db.file }))
+
+// --- CSV export via native save dialog ---
+ipcMain.handle('export:csv', async (_e, { suggestedName, csv }) => {
+  const res = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export CSV',
+    defaultPath: path.join(app.getPath('documents'), suggestedName),
+    filters: [{ name: 'CSV', extensions: ['csv'] }],
+  })
+  if (res.canceled || !res.filePath) return null
+  fs.writeFileSync(res.filePath, '\ufeff' + csv, 'utf8') // BOM so Excel opens UTF-8 correctly
+  return res.filePath
+})
+
+// --- Auth: PINs are verified in the main process; renderer never sees hashes ---
+const ADMIN_ID = 'super-admin'
+const ADMIN_DEFAULT_PIN = '8865'
+
+function adminHash() {
+  let h = db.getKv('admin_pin')
+  if (!h) {
+    h = auth.hashPin(ADMIN_DEFAULT_PIN)
+    db.setKv('admin_pin', h)
+  }
+  return h
+}
+
+ipcMain.handle('auth:login', (_e, { id, pin }) => {
+  const locked = auth.lockedFor(id)
+  if (locked) return { ok: false, lockSeconds: locked }
+  const stored = id === ADMIN_ID ? adminHash() : db.staffRow(id)?.pin
+  if (!stored) return { ok: false, reason: 'no-account' }
+  if (!auth.verifyPin(pin, stored)) {
+    const { fails, lockSeconds } = auth.recordFailure(id)
+    ulog(`login fail id=${id} fails=${fails}`)
+    return { ok: false, fails, lockSeconds }
+  }
+  auth.clearFailures(id)
+  // transparently upgrade a legacy plaintext PIN to a hash on successful login
+  if (id !== ADMIN_ID && !auth.isHashed(stored)) db.updateStaffRow(id, { pin: auth.hashPin(pin) })
+  const row = id === ADMIN_ID ? null : db.staffRow(id)
+  return { ok: true, mustChangePin: !!row?.mustChangePin }
+})
+
+ipcMain.handle('auth:set-pin', (_e, { id, pin }) => {
+  if (!/^\d{4,6}$/.test(String(pin))) return { ok: false, reason: 'PIN must be 4–6 digits' }
+  if (id === ADMIN_ID) {
+    db.setKv('admin_pin', auth.hashPin(pin))
+    return { ok: true }
+  }
+  return { ok: db.updateStaffRow(id, { pin: auth.hashPin(pin), mustChangePin: false }) }
 })
 
 // --- Printers: enumerate installed Windows printers ---
@@ -154,7 +207,11 @@ function preUpdateBackup() {
       backupDir(),
       `pre-update-v${app.getVersion()}-${ts()}.json`,
     )
-    fs.copyFileSync(storePath(), target)
+    fs.mkdirSync(backupDir(), { recursive: true })
+    fs.writeFileSync(target, JSON.stringify(db.exportJson()))
+    // also a byte-exact copy of the SQLite file for direct restore
+    db.integrity() // checkpoints WAL into the main file first
+    fs.copyFileSync(db.file, target.replace(/\.json$/, '.db'))
   } catch {}
 }
 
@@ -233,9 +290,9 @@ ipcMain.handle('update:check', () =>
       }),
     new Promise((res) =>
       setTimeout(() => {
-        ulog('manual check timed out')
-        res({ status: 'error', message: 'timed out' })
-      }, 15000),
+        ulog('manual check slow (>45s) — still waiting in background')
+        res({ status: 'error', message: 'slow connection — still trying in the background' })
+      }, 45000),
     ),
   ]),
 )
@@ -348,7 +405,7 @@ app.whenReady().then(() => {
     const file = path.join(imagesDir(), name)
     return net.fetch(pathToFileURL(file).toString())
   })
-  migratePendingJobs()
+  db.open(app.getPath('userData'), storePath()) // imports pos-store.json once, then uses pos.db
   createWindow()
   setupAutoUpdater()
   app.on('activate', () => {
@@ -359,3 +416,4 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+app.on('before-quit', () => db.close(storePath())) // syncs pos-store.json for downgrade compat

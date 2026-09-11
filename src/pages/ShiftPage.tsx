@@ -54,9 +54,19 @@ export default function ShiftPage({
   const shiftOrders = orders.filter(
     (o) => o.createdAt >= since && o.status !== 'refunded',
   )
-  const cashSales = shiftOrders
-    .filter((o) => o.payment === 'cash')
-    .reduce((s, o) => s + o.total, 0)
+  const cashSales = shiftOrders.reduce((s, o) => {
+    const pays = o.payments?.length ? o.payments : [{ method: o.payment, amount: o.total }]
+    return s + pays.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0)
+  }, 0)
+  // cash refunds leave the drawer — subtract them from expected cash
+  const cashRefunds = orders
+    .filter((o) => o.createdAt >= since)
+    .reduce((s, o) => {
+      const cash = (o.payments?.length ? o.payments : [{ method: o.payment, amount: o.total }]).some(
+        (p) => p.method === 'cash',
+      )
+      return s + (cash ? (o.refunds ?? []).reduce((a, r) => a + r.amount, 0) : 0)
+    }, 0)
   const totalSales = shiftOrders.reduce((s, o) => s + o.total, 0)
   const paidIn = (current?.movements ?? [])
     .filter((m) => m.type === 'paid-in')
@@ -64,7 +74,7 @@ export default function ShiftPage({
   const paidOut = (current?.movements ?? [])
     .filter((m) => m.type === 'paid-out')
     .reduce((s, m) => s + m.amount, 0)
-  const expected = (current?.float ?? 0) + cashSales + paidIn - paidOut
+  const expected = (current?.float ?? 0) + cashSales + paidIn - paidOut - cashRefunds
   const counted = current?.movements.filter((m) => m.type === 'count').at(-1)?.amount ?? null
   const variance = counted !== null ? counted - expected : null
 

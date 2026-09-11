@@ -60,6 +60,30 @@ export interface Category {
  *  in Menu → Categories before adding items. */
 export const SEED_CATEGORIES: Category[] = []
 
+// ---------- Modifiers / add-ons ----------
+
+export interface ModifierOption {
+  id: string
+  name: string
+  /** Price adjustment in cents — can be 0. */
+  price: Cents
+}
+
+export interface ModifierGroup {
+  id: string
+  name: string // e.g. "Size", "Extras"
+  required: boolean // at least one option must be picked
+  multi: boolean // multi-select (checkboxes) vs single-select (radio)
+  options: ModifierOption[]
+}
+
+/** A modifier choice snapped onto an order line — flattened for display. */
+export interface SelectedMod {
+  group: string
+  name: string
+  price: Cents
+}
+
 export interface MenuItem {
   id: string
   name: string
@@ -68,9 +92,26 @@ export interface MenuItem {
   available: boolean
   image: string
   emoji: string
+  modifiers?: ModifierGroup[]
+  /** Tax class id into Settings.taxClasses; absent = default rate. */
+  taxClass?: string
+  /** Stock tracking: undefined = not tracked (unlimited). */
+  stock?: number
+  lowStockAt?: number
 }
 
 export const MENU_ITEMS: MenuItem[] = []
+
+/** Stable key for a cart line: the same item with different modifiers is a
+ *  different line, so a "Large" never merges into a "Small". */
+export const lineKey = (itemId: string, mods?: SelectedMod[]) =>
+  mods?.length
+    ? `${itemId}|${mods.map((m) => `${m.group}:${m.name}`).sort().join(',')}`
+    : itemId
+
+/** Sum of modifier price adjustments on one line (per unit). */
+export const modsTotal = (mods?: SelectedMod[]) =>
+  mods?.reduce((s, m) => s + m.price, 0) ?? 0
 
 export type OrderStatus = 'waiting' | 'ready' | 'served'
 
@@ -101,7 +142,10 @@ export interface Staff {
   id: string
   name: string
   role: Role
+  /** Plaintext only transiently (new account / reset) until the next save
+   *  hashes it in the main process; '' afterwards. See `hasPin`. */
   pin: string
+  hasPin?: boolean
   initials: string
   color: string
   active: boolean
@@ -113,9 +157,11 @@ export interface Staff {
  *  on first boot, then adds the rest of the team in Staff Management. */
 export const STAFF: Staff[] = []
 
-/** Hidden owner account. Not persisted, not listed anywhere — reached from the
+/** Hidden owner account. Not in the staff list — reached from the
  *  "Administrator" link on the login screen. Can manage managers and staff,
- *  and is the recovery path when a manager forgets their PIN. */
+ *  and is the recovery path when a manager forgets their PIN.
+ *  On desktop the real PIN is a salted hash in SQLite (default 8865, changeable
+ *  from the Staff page); `pin` here is only the browser-preview fallback. */
 export const SUPER_ADMIN: Staff = {
   id: 'super-admin',
   name: 'Administrator',
@@ -166,7 +212,8 @@ export interface Settings {
   taxId: string
   receiptFooter: string
   // Tax & numbering
-  taxRate: number
+  taxRate: number // fallback/default rate for items without a taxClass
+  taxClasses: TaxClass[] // per-item tax classes (item.taxClass → id)
   orderPrefix: string
   // Hardware — printer names are Windows device names ('' = not assigned).
   // Both roles may point at the same physical printer (single-printer shops).
@@ -184,6 +231,18 @@ export interface Settings {
 
 export type PaperWidth = '58' | '80'
 
+/** A named tax rate — items reference it via MenuItem.taxClass. */
+export interface TaxClass {
+  id: string
+  name: string
+  rate: number
+}
+
+export const DEFAULT_TAX_CLASSES: TaxClass[] = [
+  { id: 'std', name: 'Standard', rate: 0.095 },
+  { id: 'exempt', name: 'Exempt / Zero-rated', rate: 0 },
+]
+
 export const DEFAULT_SETTINGS: Settings = {
   restaurantName: 'Khadka Kitchen',
   legalName: 'Khadka Kitchen LLC',
@@ -194,6 +253,7 @@ export const DEFAULT_SETTINGS: Settings = {
   taxId: 'EIN 12-3456789',
   receiptFooter: 'Thank you, please come again!',
   taxRate: 0.095, // US sales tax (CA combined rate); editable per state
+  taxClasses: DEFAULT_TAX_CLASSES,
   orderPrefix: 'DNN',
   kitchenEnabled: true,
   kitchenPrinter: '',
@@ -221,5 +281,9 @@ export function migrateSettings(input: Partial<Settings>): Settings {
     billingPrinter: isFake(raw.billingPrinter) ? '' : (raw.billingPrinter ?? ''),
     kitchenPaper: raw.kitchenPaper ?? legacyPaper,
     billingPaper: raw.billingPaper ?? legacyPaper,
+    taxClasses:
+      Array.isArray(raw.taxClasses) && raw.taxClasses.length
+        ? raw.taxClasses
+        : DEFAULT_TAX_CLASSES.map((c) => ({ ...c, rate: c.id === 'std' ? (raw.taxRate ?? c.rate) : c.rate })),
   }
 }

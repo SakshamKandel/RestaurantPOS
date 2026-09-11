@@ -4,7 +4,9 @@ import {
   SEED_CATEGORIES,
   SEED_CUSTOMERS,
   STAFF,
+  SUPER_ADMIN,
   type Category,
+  type SelectedMod,
   type Cents,
   type Customer,
   type MenuItem,
@@ -16,15 +18,60 @@ import type { PaymentMethod } from './components/OrderPanel'
 export type OrderType = 'take-away' | 'collection' | 'delivery'
 
 export interface OrderLineSnap {
+  /** Menu item id — used for stock deduction/restoration. */
+  itemId?: string
   name: string
   qty: number
+  /** Base unit price; modifier prices are in `mods`. */
   price: Cents
   note?: string
+  mods?: SelectedMod[]
+  /** Tax class id at time of sale (fallback = store default rate). */
+  taxClass?: string
+  /** Rate applied at time of sale — survives later rate edits. */
+  taxRate?: number
+  /** Post-discount line net (the tax base), exact cents. */
+  net?: Cents
+  /** Line tax amount in cents. */
+  tax?: Cents
+  /** Units refunded so far (partial refunds). */
+  refundedQty?: number
 }
 
 export type Discount = { type: 'percent' | 'flat'; value: number } | null
 
-export type PlacedStatus = 'new' | 'ready' | 'served' | 'refunded'
+/** One component of a (possibly split) payment. */
+export interface PaymentRecord {
+  method: PaymentMethod
+  amount: Cents
+  tendered?: Cents // cash only
+  change?: Cents // cash only
+}
+
+/** A refund event — lines reference order.lines by index. */
+export interface RefundRecord {
+  id: string
+  at: number
+  actor: string
+  lines: { index: number; name: string; qty: number; amount: Cents }[]
+  /** Total money returned, including the tax share. */
+  amount: Cents
+  reason?: string
+}
+
+export type PlacedStatus = 'new' | 'ready' | 'served' | 'refunded' | 'partial-refund'
+
+/** Refundable amount (net + its tax share) for `qty` units of order line `i`.
+ *  Uses the per-line net/tax stored at sale time; approximates for legacy orders. */
+export function lineRefundAmount(o: PlacedOrder, i: number, qty: number): Cents {
+  const l = o.lines[i]
+  if (!l || qty <= 0) return 0
+  const gross = (l.price + (l.mods?.reduce((s, m) => s + m.price, 0) ?? 0)) * l.qty
+  const net = l.net ?? Math.round((gross * Math.max(0, o.subtotal - o.discount)) / Math.max(1, o.subtotal))
+  const effRate = o.subtotal - o.discount > 0 ? o.tax / (o.subtotal - o.discount) : 0
+  const lt = l.tax ?? Math.round(net * (l.taxRate ?? effRate))
+  return Math.round(((net + lt) * qty) / l.qty)
+}
 
 export interface PlacedOrder {
   id: string
@@ -40,6 +87,11 @@ export interface PlacedOrder {
   payment: PaymentMethod
   tendered: Cents
   change: Cents
+  /** Split payments; absent on pre-split orders → payment/tendered/change apply. */
+  payments?: PaymentRecord[]
+  refunds?: RefundRecord[]
+  /** Per-class tax amounts, e.g. [{name:'Standard',rate:0.095,amount:120}]. */
+  taxBreakdown?: { name: string; rate: number; amount: Cents }[]
   status: PlacedStatus
   createdAt: number
   cashier: string
@@ -50,7 +102,7 @@ export interface HeldOrder {
   label: string
   type: OrderType
   customer: string
-  lines: { itemId: string; qty: number; note?: string }[]
+  lines: { itemId: string; qty: number; note?: string; mods?: SelectedMod[] }[]
   createdAt: number
 }
 
@@ -170,10 +222,54 @@ interface PosBridge {
   onUpdateChecking?: (cb: () => void) => void
   onUpdateNone?: (cb: (i: { version: string }) => void) => void
   onUpdateError?: (cb: (i: { message: string }) => void) => void
+  integrity?: () => Promise<{ result: string; file: string }>
+  login?: (id: string, pin: string) => Promise<LoginResult>
+  setPin?: (id: string, pin: string) => Promise<{ ok: boolean; reason?: string }>
+  exportCsv?: (p: { suggestedName: string; csv: string }) => Promise<string | null>
+}
+
+export interface LoginResult {
+  ok: boolean
+  mustChangePin?: boolean
+  /** Seconds until this account may try again (brute-force lockout). */
+  lockSeconds?: number
+  fails?: number
+  reason?: string
 }
 
 const bridge = (window as unknown as { pos?: PosBridge }).pos
 const LS_KEY = 'khadkapos'
+
+/** True when running inside Electron — PINs live only in the main process. */
+export const isDesktop = !!bridge?.loadStore
+
+/**
+ * Verify a PIN. On desktop this is checked against the salted hash in SQLite
+ * with lockout; the browser preview falls back to the plaintext in state.
+ */
+export async function verifyLogin(id: string, pin: string, fallbackStaff: Staff[]): Promise<LoginResult> {
+  if (bridge?.login) return bridge.login(id, pin)
+  if (id === SUPER_ADMIN.id) return { ok: pin === SUPER_ADMIN.pin }
+  const s = fallbackStaff.find((m) => m.id === id)
+  return s ? { ok: s.pin === pin, mustChangePin: s.mustChangePin } : { ok: false, reason: 'no-account' }
+}
+
+export const setPinSecure = (id: string, pin: string) =>
+  bridge?.setPin?.(id, pin) ?? Promise.resolve({ ok: true })
+
+export const dbIntegrity = () => bridge?.integrity?.() ?? Promise.resolve({ result: 'n/a (browser)', file: 'localStorage' })
+
+export const exportCsv = (suggestedName: string, csv: string) =>
+  bridge?.exportCsv?.({ suggestedName, csv }) ??
+  Promise.resolve(
+    (() => {
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' }))
+      a.download = suggestedName
+      a.click()
+      return suggestedName
+    })(),
+  )
 
 export async function loadPersisted(): Promise<PosState | null> {
   try {

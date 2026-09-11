@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { DatabaseBackup, HardDrive, Info, Printer, ScrollText, Vault, Wifi, WifiOff } from 'lucide-react'
 import type { Settings } from '../data/menu'
-import { checkForUpdates, type AuditEvent, type DetectedPrinter } from '../store'
+import { checkForUpdates, dbIntegrity, onUpdateAvailable, onUpdateNone, type AuditEvent, type DetectedPrinter } from '../store'
 import logoIcon from '../assets/icon.png'
 
 interface Props {
@@ -15,8 +15,18 @@ interface Props {
 
 export default function InfoPage({ settings, orderCount, audit, printers, version, onBackup }: Props) {
   const [check, setCheck] = useState<'idle' | 'checking' | { status: string; version?: string; message?: string }>('idle')
+  // A slow check may finish after the button's timeout fired — let the late
+  // result overwrite the "slow connection" message rather than get lost.
+  useEffect(() => {
+    onUpdateNone((i) => setCheck({ status: 'none', version: i.version }))
+    onUpdateAvailable((i) => setCheck({ status: 'found', version: i.version }))
+  }, [])
   const detected = (name: string) => !!name && printers.some((p) => p.name === name)
   const [online, setOnline] = useState(navigator.onLine)
+  const [dbInfo, setDbInfo] = useState<{ result: string; file: string } | null>(null)
+  useEffect(() => {
+    void dbIntegrity().then(setDbInfo)
+  }, [])
   useEffect(() => {
     const up = () => setOnline(true)
     const down = () => setOnline(false)
@@ -43,7 +53,15 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
   })
   const billingReady = settings.billingEnabled && detected(settings.billingPrinter)
   const health = [
-    { label: 'Local database', detail: `${orderCount} orders · auto-backup on every change`, ok: true, badge: 'OK', icon: HardDrive },
+    {
+      label: 'Local database',
+      detail: dbInfo
+        ? `${orderCount} orders · SQLite (${dbInfo.file.split(/[\\/]/).pop()}) · integrity: ${dbInfo.result}`
+        : `${orderCount} orders · checking integrity…`,
+      ok: !dbInfo || dbInfo.result === 'ok',
+      badge: !dbInfo ? '…' : dbInfo.result === 'ok' ? 'OK' : 'CORRUPT',
+      icon: HardDrive,
+    },
     printerRow('Kitchen printer', settings.kitchenEnabled, settings.kitchenPrinter, settings.kitchenPaper),
     printerRow('Billing printer', settings.billingEnabled, settings.billingPrinter, settings.billingPaper),
     {
@@ -157,6 +175,7 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
             <button
               onClick={async () => {
                 if (check === 'checking') return
+                if (!navigator.onLine) return setCheck({ status: 'error', message: 'no internet connection' })
                 setCheck('checking')
                 const r = await checkForUpdates()
                 setCheck(r ?? { status: 'error', message: 'no response' })
@@ -175,7 +194,7 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
                 ? `Update v${check.version} found — downloading in the background`
                 : check.status === 'none'
                   ? `You're on the latest version (v${check.version})`
-                  : `Couldn't check — offline or GitHub unreachable (${check.message ?? 'error'})`}
+                  : `Couldn't reach GitHub — ${check.message ?? 'error'}. Selling is unaffected.`}
             </p>
           )}
           <p className="mt-3 text-center text-[10.5px] font-medium leading-relaxed text-neutral-400">

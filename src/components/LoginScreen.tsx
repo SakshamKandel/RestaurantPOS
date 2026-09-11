@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Delete, KeyRound, Lock, ShieldCheck } from 'lucide-react'
 import { SUPER_ADMIN, type Staff } from '../data/menu'
+import type { LoginResult } from '../store'
 import logoIcon from '../assets/icon.png'
 
 const PAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del']
@@ -9,21 +10,39 @@ type Step = 'pin' | 'new-pin' | 'confirm-pin'
 
 interface Props {
   staff: Staff[]
+  /** Verify against the main process (hash + lockout). */
+  onVerify: (id: string, pin: string) => Promise<LoginResult>
   onLogin: (staff: Staff, newPin?: string) => void
   onSetup: (name: string, pin: string) => void
 }
 
-export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
+export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props) {
   const [selected, setSelected] = useState<Staff | null>(null)
   const [pin, setPin] = useState('')
   const [newPin, setNewPin] = useState('')
   const [step, setStep] = useState<Step>('pin')
   const [error, setError] = useState('')
   const [name, setName] = useState('Admin')
+  const [busy, setBusy] = useState(false)
+  const [lockUntil, setLockUntil] = useState(0)
+  const [, tick] = useState(0)
+
+  // re-render every second while locked so the countdown is live
+  useEffect(() => {
+    if (lockUntil <= Date.now()) return
+    const t = window.setInterval(() => tick((n) => n + 1), 1000)
+    return () => window.clearInterval(t)
+  }, [lockUntil])
+  const lockLeft = Math.max(0, Math.ceil((lockUntil - Date.now()) / 1000))
 
   const active = staff.filter((s) => s.active)
   const adminMode = selected?.id === SUPER_ADMIN.id
   const isSetup = active.length === 0 && !adminMode
+
+  const reject = (msg: string) => {
+    setError(msg)
+    window.setTimeout(() => setPin(''), 350)
+  }
 
   const pickAdmin = () => {
     setSelected(SUPER_ADMIN)
@@ -33,7 +52,26 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
     setError('')
   }
 
+  /** Check the entered PIN with the main process; handles lockout messaging. */
+  const verify = async (who: Staff, entered: string) => {
+    setBusy(true)
+    try {
+      const r = await onVerify(who.id, entered)
+      if (r.ok) return r
+      if (r.lockSeconds) {
+        setLockUntil(Date.now() + r.lockSeconds * 1000)
+        reject(`Too many attempts — locked for ${r.lockSeconds >= 60 ? `${Math.round(r.lockSeconds / 60)} min` : `${r.lockSeconds}s`}`)
+      } else {
+        reject(r.reason === 'no-account' ? 'Account not found' : `Wrong PIN, try again${r.fails && r.fails >= 2 ? ` (${r.fails} failed)` : ''}`)
+      }
+      return null
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const push = (key: string) => {
+    if (busy) return
     setError('')
     if (key === 'clear') return setPin('')
     if (key === 'del') return setPin((p) => p.slice(0, -1))
@@ -42,11 +80,8 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
     if (next.length !== 4) return
 
     if (adminMode) {
-      if (next === SUPER_ADMIN.pin) onLogin(SUPER_ADMIN)
-      else {
-        setError('Wrong PIN, try again')
-        window.setTimeout(() => setPin(''), 350)
-      }
+      if (lockLeft) return reject(`Locked — try again in ${lockLeft}s`)
+      void verify(SUPER_ADMIN, next).then((r) => r && onLogin(SUPER_ADMIN))
       return
     }
 
@@ -69,17 +104,16 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
 
     if (!selected) return
     if (step === 'pin') {
-      if (next === selected.pin) {
-        if (selected.mustChangePin) {
+      if (lockLeft) return reject(`Locked — try again in ${lockLeft}s`)
+      void verify(selected, next).then((r) => {
+        if (!r) return
+        if (r.mustChangePin) {
           setStep('new-pin')
           setPin('')
         } else {
           onLogin(selected)
         }
-      } else {
-        setError('Wrong PIN, try again')
-        window.setTimeout(() => setPin(''), 350)
-      }
+      })
     } else if (step === 'new-pin') {
       setNewPin(next)
       setStep('confirm-pin')
@@ -236,7 +270,7 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
             {PAD.map((k) => (
               <button
                 key={k}
-                disabled={!isSetup && !selected}
+                disabled={busy || lockLeft > 0 || (!isSetup && !selected)}
                 onClick={() => push(k)}
                 className="flex h-13 w-16 items-center justify-center rounded-2xl bg-neutral-50 text-[17px] font-bold text-neutral-700 transition-colors hover:bg-neutral-100 active:bg-neutral-200 disabled:opacity-40"
               >

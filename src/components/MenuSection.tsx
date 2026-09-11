@@ -1,14 +1,22 @@
 import { useState } from 'react'
-import { Minus, Plus } from 'lucide-react'
+import { Minus, Plus, Settings2 } from 'lucide-react'
 import {
   formatMoney,
   ICONS,
   type Category,
   type CategoryId,
   type MenuItem,
+  type SelectedMod,
 } from '../data/menu'
 
-export type CartMap = Record<string, { qty: number; note?: string }>
+export interface CartEntry {
+  itemId: string
+  qty: number
+  note?: string
+  mods?: SelectedMod[]
+}
+/** key = lineKey(itemId, mods) — plain items key by itemId. */
+export type CartMap = Record<string, CartEntry>
 
 function DishImage({ item }: { item: MenuItem }) {
   const [failed, setFailed] = useState(false)
@@ -114,7 +122,11 @@ export default function MenuSection({
 
       <div className="mt-4 grid grid-cols-2 gap-4 xl:grid-cols-3">
         {items.map((item) => {
-          const qty = cart[item.id]?.qty ?? 0
+          // total across every cart line for this item (any modifier combo)
+          const qty = Object.values(cart)
+            .filter((l) => l.itemId === item.id)
+            .reduce((n, l) => n + l.qty, 0)
+          const hasMods = !!item.modifiers?.length
           return (
             <article
               key={item.id}
@@ -127,6 +139,11 @@ export default function MenuSection({
                   {formatMoney(item.price)}
                 </p>
               </div>
+              {item.stock !== undefined && item.stock <= (item.lowStockAt ?? 5) && (
+                <p className={`px-0.5 text-[10px] font-bold ${item.stock === 0 ? 'text-red-500' : 'text-amber-600'}`}>
+                  {item.stock === 0 ? 'Out of stock' : `Only ${item.stock} left`}
+                </p>
+              )}
 
               {!item.available ? (
                 <button
@@ -134,6 +151,15 @@ export default function MenuSection({
                   className="mt-2.5 w-full cursor-not-allowed rounded-xl border border-neutral-200 py-2 text-[12px] font-bold text-neutral-300"
                 >
                   Sold Out
+                </button>
+              ) : hasMods ? (
+                // each tap opens the modifier picker → its own cart line
+                <button
+                  onClick={() => onAdd(item.id)}
+                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-neutral-200 py-2 text-[12px] font-bold text-neutral-600 transition-colors hover:border-primary hover:bg-primary hover:text-white"
+                >
+                  <Settings2 size={14} strokeWidth={2.4} />
+                  {qty > 0 ? `Customise · ${qty} in cart` : 'Customise'}
                 </button>
               ) : qty === 0 ? (
                 <button
