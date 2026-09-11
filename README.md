@@ -61,6 +61,10 @@ node scripts/dbtest.cjs   # storage + auth layer test
 - **Shift** — cash drawer float, paid-in/out, blind count, expected-vs-counted
   (split-payment and refund aware)
 - **Settings** — restaurant identity, tax classes, order prefix, printer roles
+- **Logs** — error files under `%APPDATA%/KhadkaPOS/logs/` — one `.txt` per
+  problem area (`printer-errors`, `auth-errors`, `update-errors`,
+  `app-errors`), created only when an error actually occurs. View, filter,
+  copy or clear them in-app, or open the folder directly.
 - **Info** — health panel (DB integrity check, printers, connectivity) +
   manual backup
 
@@ -75,6 +79,9 @@ node scripts/dbtest.cjs   # storage + auth layer test
 - Print jobs persist across restarts; a job left mid-flight on shutdown is
   marked `failed` on next launch so it can be retried — never re-printed
   silently.
+- Failures are appended to per-area error files in
+  `%APPDATA%/KhadkaPOS/logs/` (lazily created — no errors, no folder) and
+  viewable on the Logs page.
 
 ## Layout
 
@@ -88,9 +95,10 @@ src/
                    LoginScreen, PaymentModal, ModifierModal, RefundModal,
                    ReceiptModal
   pages/           Dashboard, Printers, Customers, Transactions,
-                   Report, Settings, Info, Staff, Shift, Menu
+                   Report, Settings, Logs, Info, Staff, Shift, Menu
 scripts/electron.mjs  Launcher (strips ELECTRON_RUN_AS_NODE)
 scripts/dbtest.cjs    Storage/auth layer test
+scripts/logtest.cjs   Error-log IPC test (stubbed Electron)
 scripts/peek-db.cjs   Inspect a pos.db (integrity + row counts)
 ```
 

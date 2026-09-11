@@ -206,6 +206,29 @@ export interface UpdateInfo {
   deadline: number
 }
 
+// ---------- Error logs (files under userData/logs, written by the main process) ----------
+
+export type LogCategory = 'printer' | 'auth' | 'update' | 'app'
+
+export interface LogFileInfo {
+  name: string
+  size: number
+  mtime: number
+}
+
+export interface LogList {
+  dir: string
+  files: LogFileInfo[]
+}
+
+export interface LogContent {
+  name: string
+  size: number
+  /** true when only the last 256 KB of the file was returned. */
+  truncated: boolean
+  content: string
+}
+
 interface PosBridge {
   loadStore: () => Promise<PosState | null>
   saveStore: (s: PosState) => Promise<boolean>
@@ -226,6 +249,11 @@ interface PosBridge {
   login?: (id: string, pin: string) => Promise<LoginResult>
   setPin?: (id: string, pin: string) => Promise<{ ok: boolean; reason?: string }>
   exportCsv?: (p: { suggestedName: string; csv: string }) => Promise<string | null>
+  logError?: (category: string, message: string) => Promise<boolean>
+  listLogs?: () => Promise<LogList>
+  readLog?: (name: string) => Promise<LogContent | null>
+  clearLog?: (name: string) => Promise<boolean>
+  openLogs?: () => Promise<string>
 }
 
 export interface LoginResult {
@@ -276,14 +304,18 @@ export async function loadPersisted(): Promise<PosState | null> {
     if (bridge?.loadStore) return await bridge.loadStore()
     const raw = localStorage.getItem(LS_KEY)
     return raw ? (JSON.parse(raw) as PosState) : null
-  } catch {
+  } catch (e) {
+    logError('app', `store load IPC failed: ${(e as Error)?.message ?? e}`)
     return null
   }
 }
 
 export function persist(state: PosState) {
   try {
-    if (bridge?.saveStore) void bridge.saveStore(state)
+    if (bridge?.saveStore)
+      void bridge
+        .saveStore(state)
+        .catch((e) => logError('app', `store save IPC failed: ${e?.message ?? e}`))
     else localStorage.setItem(LS_KEY, JSON.stringify(state))
   } catch {
     /* persistence is best-effort in preview mode */
@@ -337,6 +369,24 @@ export const onUpdateError = (cb: (i: { message: string }) => void) =>
 
 /** File picker → copies photo into app data, returns posimg:// URL (or null). */
 export const pickImage = () => bridge?.pickImage?.() ?? Promise.resolve(null)
+
+// ---------- Error logs ----------
+
+/** Fire-and-forget: append one line to logs/<category>-errors.txt. Never throws. */
+export function logError(category: LogCategory, message: string) {
+  try {
+    console.error(`[${category}]`, message)
+    void bridge?.logError?.(category, message)
+  } catch {
+    /* logging must never break the app */
+  }
+}
+
+export const listLogs = (): Promise<LogList> =>
+  bridge?.listLogs?.() ?? Promise.resolve({ dir: '', files: [] })
+export const readLog = (name: string) => bridge?.readLog?.(name) ?? Promise.resolve(null)
+export const clearLog = (name: string) => bridge?.clearLog?.(name) ?? Promise.resolve(false)
+export const openLogsFolder = () => bridge?.openLogs?.() ?? Promise.resolve('')
 
 export function timeAgo(ts: number): string {
   const m = Math.max(0, Math.round((Date.now() - ts) / 60000))

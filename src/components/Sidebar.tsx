@@ -5,6 +5,7 @@ import {
   LineChart,
   LogOut,
   Printer,
+  ScrollText,
   Settings,
   UserCog,
   Users,
@@ -25,6 +26,7 @@ export type View =
   | 'shift'
   | 'staff'
   | 'settings'
+  | 'logs'
   | 'info'
 
 interface NavItem {
@@ -47,6 +49,7 @@ const MAIN_NAV: NavItem[] = [
 const OTHER_NAV: { view: View; label: string; icon: LucideIcon; roles: Role[] }[] = [
   { view: 'staff', label: 'Staff', icon: UserCog, roles: ['manager'] },
   { view: 'settings', label: 'Settings', icon: Settings, roles: ['manager'] },
+  { view: 'logs', label: 'Logs', icon: ScrollText, roles: ['cashier', 'kitchen', 'manager'] },
   { view: 'info', label: 'Info', icon: Info, roles: ['cashier', 'kitchen', 'manager'] },
 ]
 

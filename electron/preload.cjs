@@ -14,6 +14,12 @@ contextBridge.exposeInMainWorld('pos', {
   login: (id, pin) => ipcRenderer.invoke('auth:login', { id, pin }),
   setPin: (id, pin) => ipcRenderer.invoke('auth:set-pin', { id, pin }),
   exportCsv: (payload) => ipcRenderer.invoke('export:csv', payload),
+  // error logs
+  logError: (category, message) => ipcRenderer.invoke('logs:append', { category, message }),
+  listLogs: () => ipcRenderer.invoke('logs:list'),
+  readLog: (name) => ipcRenderer.invoke('logs:read', name),
+  clearLog: (name) => ipcRenderer.invoke('logs:clear', name),
+  openLogs: () => ipcRenderer.invoke('logs:open'),
   // updates
   appVersion: () => ipcRenderer.invoke('app:version'),
   checkUpdates: () => ipcRenderer.invoke('update:check'),

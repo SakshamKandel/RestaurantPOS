@@ -19,6 +19,7 @@ import ShiftPage from './pages/ShiftPage'
 import TransactionsPage from './pages/TransactionsPage'
 import ReportPage from './pages/ReportPage'
 import SettingsPage from './pages/SettingsPage'
+import LogsPage from './pages/LogsPage'
 import InfoPage from './pages/InfoPage'
 import StaffPage from './pages/StaffPage'
 import {
@@ -46,6 +47,7 @@ import {
   installUpdate,
   isDesktop,
   loadPersisted,
+  logError,
   onUpdateAvailable,
   onUpdateChecking,
   onUpdateDownloaded,
@@ -114,6 +116,7 @@ export default function App() {
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [version, setVersion] = useState('')
   const [lastOrder, setLastOrder] = useState<PlacedOrder | null>(null)
+  const [logFocus, setLogFocus] = useState<string | null>(null)
 
   const refreshPrinters = () => detectPrinters().then(setPrinters)
   useEffect(() => {
@@ -124,6 +127,17 @@ export default function App() {
     onUpdateNone((i) => flash(`You're on the latest version (v${i.version})`))
     onUpdateError(() => flash("Couldn't check for updates — offline or GitHub unreachable"))
     onUpdateDownloaded((info) => setUpdate(info))
+    // Anything that escapes normal handling lands in logs/app-errors.txt
+    const onWinError = (e: ErrorEvent) =>
+      logError('app', `ui error: ${e.message}${e.filename ? ` (${e.filename.split(/[\\/]/).pop()}:${e.lineno})` : ''}`)
+    const onRejection = (e: PromiseRejectionEvent) =>
+      logError('app', `unhandled rejection: ${(e.reason as Error)?.stack ?? e.reason}`)
+    window.addEventListener('error', onWinError)
+    window.addEventListener('unhandledrejection', onRejection)
+    return () => {
+      window.removeEventListener('error', onWinError)
+      window.removeEventListener('unhandledrejection', onRejection)
+    }
   }, [])
 
   // Load persisted state once
@@ -192,11 +206,17 @@ export default function App() {
     }))
 
   // ---------- Print queue → real printers when detected, simulated otherwise ----------
-  const markJob = (id: string, status: PrintJob['status'], error?: string) =>
+  const markJob = (job: PrintJob, status: PrintJob['status'], error?: string) => {
+    if (status === 'failed')
+      logError(
+        'printer',
+        `${job.docType}${job.copy ? ' (copy)' : ''} → ${deviceFor(job.role) || job.device || 'unassigned'} · ${job.orderNumber}: ${error ?? 'unknown error'}`,
+      )
     setState((s) => ({
       ...s,
-      printJobs: s.printJobs.map((j) => (j.id === id ? { ...j, status, error } : j)),
+      printJobs: s.printJobs.map((j) => (j.id === job.id ? { ...j, status, error } : j)),
     }))
+  }
 
   const deviceFor = (role: PrinterRole) =>
     role === 'kitchen' ? state.settings.kitchenPrinter : state.settings.billingPrinter
@@ -218,7 +238,7 @@ export default function App() {
     const s = state.settings
     const deviceName = deviceFor(job.role)
     const problem = roleProblem(job.role)
-    if (problem) return markJob(job.id, 'failed', problem)
+    if (problem) return markJob(job, 'failed', problem)
 
     const send =
       job.docType === 'DRAWER KICK'
@@ -233,10 +253,10 @@ export default function App() {
             paperFor(job.role),
           )
 
-    if (!send) return markJob(job.id, 'failed', 'Printing is only available in the desktop app')
+    if (!send) return markJob(job, 'failed', 'Printing is only available in the desktop app')
     send
-      .then((res) => markJob(job.id, res.ok ? 'printed' : 'failed', res.ok ? undefined : res.reason ?? 'Unknown printer error'))
-      .catch((e) => markJob(job.id, 'failed', String(e?.message ?? e)))
+      .then((res) => markJob(job, res.ok ? 'printed' : 'failed', res.ok ? undefined : res.reason ?? 'Unknown printer error'))
+      .catch((e) => markJob(job, 'failed', String(e?.message ?? e)))
   }
 
   const makeJob = (docType: DocType, role: PrinterRole, orderNumber = '—', copy = false): PrintJob => ({
@@ -293,7 +313,7 @@ export default function App() {
     if (!job) return
     const order = state.orders.find((o) => o.number === job.orderNumber)
     if (!order && (job.docType === 'KITCHEN TICKET' || job.docType === 'RECEIPT'))
-      return markJob(id, 'failed', 'Original order no longer exists')
+      return markJob(job, 'failed', 'Original order no longer exists')
     setState((s) => ({
       ...s,
       printJobs: s.printJobs.map((j) =>
@@ -1002,7 +1022,10 @@ export default function App() {
         view={view}
         role={user.role}
         userName={user.name}
-        onNavigate={setView}
+        onNavigate={(v) => {
+          setLogFocus(null) // sidebar nav = no file preselection
+          setView(v)
+        }}
         onLogout={() => {
           flushPersist() // auth reads SQLite — land pending PIN/staff writes first
           setUser(null)
@@ -1125,6 +1148,10 @@ export default function App() {
             flash('Print history cleared')
           }}
           onOpenSettings={() => setView('settings')}
+          onOpenLogs={() => {
+            setLogFocus('printer')
+            setView('logs')
+          }}
         />
       )}
       {view === 'transactions' && (
@@ -1182,6 +1209,7 @@ export default function App() {
           onOpenDrawer={openDrawer}
         />
       )}
+      {view === 'logs' && <LogsPage focus={logFocus} />}
       {view === 'info' && (
         <InfoPage
           settings={state.settings}

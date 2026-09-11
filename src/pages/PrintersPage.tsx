@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, CheckCircle2, ChefHat, Eye, FileText, Printer, RotateCcw, Settings2, Vault, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChefHat, Eye, FileText, Printer, RotateCcw, ScrollText, Settings2, Vault, X } from 'lucide-react'
 import type { DetectedPrinter, PrintJob, PlacedOrder, PrinterRole } from '../store'
 import type { Settings } from '../data/menu'
 import { kitchenHtml, receiptHtml } from '../print/docs'
@@ -19,9 +19,10 @@ interface Props {
   onRetryAllFailed: () => void
   onClearHistory: () => void
   onOpenSettings: () => void
+  onOpenLogs: () => void
 }
 
-export default function PrintersPage({ jobs, orders, settings, printers, onRetry, onRetryAllFailed, onClearHistory, onOpenSettings }: Props) {
+export default function PrintersPage({ jobs, orders, settings, printers, onRetry, onRetryAllFailed, onClearHistory, onOpenSettings, onOpenLogs }: Props) {
   const [preview, setPreview] = useState<{ title: string; html: string; mm: number } | null>(null)
   const detected = (name: string) => !!name && printers.some((p) => p.name === name)
 
@@ -186,6 +187,14 @@ export default function PrintersPage({ jobs, orders, settings, printers, onRetry
             </p>
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={onOpenLogs}
+              title="Open the printer-errors.txt log file"
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-[11px] font-bold text-neutral-500 hover:border-primary hover:text-primary"
+            >
+              <ScrollText size={12} />
+              Error log
+            </button>
             {failedCount > 0 && (
               <button
                 onClick={onRetryAllFailed}

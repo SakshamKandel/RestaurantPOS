@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { pathToFileURL } = require('url')
@@ -19,6 +19,28 @@ if (process.env.KPOS_USERDATA) app.setPath('userData', process.env.KPOS_USERDATA
 const storePath = () => path.join(app.getPath('userData'), 'pos-store.json')
 const backupDir = () => path.join(app.getPath('userData'), 'backups')
 const imagesDir = () => path.join(app.getPath('userData'), 'images')
+const logsDir = () => path.join(app.getPath('userData'), 'logs')
+
+// --- Error logs: one txt file per problem area under userData/logs.
+//     The folder and files are created lazily — only when an error actually
+//     happens — so a healthy install never has a logs directory. ---
+const LOG_FILES = {
+  printer: 'printer-errors.txt',
+  auth: 'auth-errors.txt',
+  update: 'update-errors.txt',
+  app: 'app-errors.txt',
+}
+
+function logToFile(category, message) {
+  try {
+    fs.mkdirSync(logsDir(), { recursive: true })
+    const name = LOG_FILES[category] ?? LOG_FILES.app
+    const line = `[${new Date().toISOString()}] ${String(message).replace(/\s*[\r\n]+\s*/g, ' | ').trim().slice(0, 2000)}\n`
+    fs.appendFileSync(path.join(logsDir(), name), line, 'utf8')
+  } catch {
+    /* logging must never break the app */
+  }
+}
 
 const MAX_BACKUPS = 10
 
@@ -90,17 +112,23 @@ ipcMain.handle('store:load', () => {
     return state
   } catch (e) {
     ulog(`store load failed ${e?.message ?? e}`)
+    logToFile('app', `store load failed: ${e?.message ?? e}`)
     return null
   }
 })
 
 ipcMain.handle('store:save', (_e, data) => {
-  db.commit(data)
-  if (Date.now() - lastBackupAt > BACKUP_MIN_INTERVAL) {
-    lastBackupAt = Date.now()
-    rotateBackup(db.exportJson())
+  try {
+    db.commit(data)
+    if (Date.now() - lastBackupAt > BACKUP_MIN_INTERVAL) {
+      lastBackupAt = Date.now()
+      rotateBackup(db.exportJson())
+    }
+    return true
+  } catch (e) {
+    logToFile('app', `store save failed: ${e?.message ?? e}`)
+    return false
   }
-  return true
 })
 
 ipcMain.handle('store:backup', () => {
@@ -121,6 +149,76 @@ ipcMain.handle('export:csv', async (_e, { suggestedName, csv }) => {
   if (res.canceled || !res.filePath) return null
   fs.writeFileSync(res.filePath, '\ufeff' + csv, 'utf8') // BOM so Excel opens UTF-8 correctly
   return res.filePath
+})
+
+// --- Error log files: list / read (tail-bounded) / clear / open folder ---
+const LOG_TAIL_BYTES = 256 * 1024 // viewer reads at most the last 256 KB
+
+ipcMain.handle('logs:append', (_e, payload) => {
+  const { category, message } = payload ?? {}
+  if (typeof message !== 'string' || !message.trim()) return false
+  logToFile(typeof category === 'string' ? category : 'app', message)
+  return true
+})
+
+ipcMain.handle('logs:list', () => {
+  try {
+    if (!fs.existsSync(logsDir())) return { dir: logsDir(), files: [] }
+    const files = fs
+      .readdirSync(logsDir())
+      .filter((f) => /\.(txt|log)$/i.test(f))
+      .map((f) => {
+        try {
+          const st = fs.statSync(path.join(logsDir(), f))
+          return { name: f, size: st.size, mtime: st.mtimeMs }
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtime - a.mtime)
+    return { dir: logsDir(), files }
+  } catch {
+    return { dir: logsDir(), files: [] }
+  }
+})
+
+ipcMain.handle('logs:read', (_e, name) => {
+  try {
+    const file = path.join(logsDir(), path.basename(String(name)))
+    if (!fs.existsSync(file)) return null
+    const size = fs.statSync(file).size
+    const base = path.basename(file)
+    if (size <= LOG_TAIL_BYTES)
+      return { name: base, size, truncated: false, content: fs.readFileSync(file, 'utf8') }
+    const fd = fs.openSync(file, 'r')
+    try {
+      const buf = Buffer.alloc(LOG_TAIL_BYTES)
+      fs.readSync(fd, buf, 0, LOG_TAIL_BYTES, size - LOG_TAIL_BYTES)
+      return { name: base, size, truncated: true, content: buf.toString('utf8') }
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return null
+  }
+})
+
+ipcMain.handle('logs:clear', (_e, name) => {
+  try {
+    fs.unlinkSync(path.join(logsDir(), path.basename(String(name))))
+    return true
+  } catch {
+    return false
+  }
+})
+
+ipcMain.handle('logs:open', () => {
+  try {
+    fs.mkdirSync(logsDir(), { recursive: true })
+    void shell.openPath(logsDir())
+  } catch {}
+  return logsDir()
 })
 
 // --- Auth: PINs are verified in the main process; renderer never sees hashes ---
@@ -144,6 +242,7 @@ ipcMain.handle('auth:login', (_e, { id, pin }) => {
   if (!auth.verifyPin(pin, stored)) {
     const { fails, lockSeconds } = auth.recordFailure(id)
     ulog(`login fail id=${id} fails=${fails}`)
+    logToFile('auth', `login failed · account=${id} · attempt ${fails}${lockSeconds ? ` · locked ${lockSeconds}s` : ''}`)
     return { ok: false, fails, lockSeconds }
   }
   auth.clearFailures(id)
@@ -261,10 +360,20 @@ function setupAutoUpdater() {
   })
   autoUpdater.on('error', (err) => {
     ulog(`error ${err?.message ?? err}`)
+    logToFile('update', `auto-update error: ${err?.message ?? err}`)
     mainWindow?.webContents.send('update:error', { message: String(err?.message ?? err) })
   })
-  autoUpdater.checkForUpdates().catch((e) => ulog(`check failed ${e?.message ?? e}`))
-  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 3600 * 1000)
+  autoUpdater.checkForUpdates().catch((e) => {
+    ulog(`check failed ${e?.message ?? e}`)
+    logToFile('update', `update check failed: ${e?.message ?? e}`)
+  })
+  setInterval(
+    () =>
+      autoUpdater
+        .checkForUpdates()
+        .catch((e) => logToFile('update', `update check failed: ${e?.message ?? e}`)),
+    6 * 3600 * 1000,
+  )
 }
 
 ipcMain.handle('update:install', () => {
@@ -286,6 +395,7 @@ ipcMain.handle('update:check', () =>
       })
       .catch((e) => {
         ulog(`manual check failed ${e?.message ?? e}`)
+        logToFile('update', `manual update check failed: ${e?.message ?? e}`)
         return { status: 'error', message: String(e?.message ?? e) }
       }),
     new Promise((res) =>
@@ -405,7 +515,11 @@ app.whenReady().then(() => {
     const file = path.join(imagesDir(), name)
     return net.fetch(pathToFileURL(file).toString())
   })
-  db.open(app.getPath('userData'), storePath()) // imports pos-store.json once, then uses pos.db
+  try {
+    db.open(app.getPath('userData'), storePath()) // imports pos-store.json once, then uses pos.db
+  } catch (e) {
+    logToFile('app', `database open failed: ${e?.message ?? e}`)
+  }
   createWindow()
   setupAutoUpdater()
   app.on('activate', () => {
@@ -417,3 +531,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 app.on('before-quit', () => db.close(storePath())) // syncs pos-store.json for downgrade compat
+
+// Last-resort capture: anything that escapes normal handling still lands in a file.
+process.on('uncaughtException', (e) =>
+  logToFile('app', `uncaught exception: ${e?.stack ?? e?.message ?? e}`),
+)
+app.on('render-process-gone', (_e, _wc, details) =>
+  logToFile('app', `renderer process gone: ${details?.reason ?? 'unknown'}`),
+)
