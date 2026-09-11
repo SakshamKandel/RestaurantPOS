@@ -25,7 +25,7 @@ ${copy ? '<p class="c b">*** COPY ***</p>' : ''}
 <hr>
 <div class="row"><span>Order ${o.number}</span><span>${new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
 <div class="row"><span>${o.type.replace('-', ' ').toUpperCase()}</span><span>${esc(o.cashier)}</span></div>
-<div class="row"><span>Customer</span><span>${esc(o.customer)}</span></div>
+${o.customer && o.customer !== 'Walk-in' ? `<div class="row"><span>Customer</span><span>${esc(o.customer)}</span></div>` : ''}
 <hr>
 ${o.lines.map((l) => `<div class="row"><span>${l.qty}x ${esc(l.name)}</span><span>${formatMoney(l.qty * l.price)}</span></div>${l.note ? `<div style="padding-left:4mm;font-style:italic">— ${esc(l.note)}</div>` : ''}`).join('')}
 <hr>
@@ -48,7 +48,7 @@ export function kitchenHtml(o: PlacedOrder, s: Settings): string {
 <p class="c big">** KITCHEN **</p>
 <hr>
 <div class="row"><span class="b">Order ${o.number}</span><span>${new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
-<div class="row"><span class="b">${o.type.replace('-', ' ').toUpperCase()}</span><span>${esc(o.customer)}</span></div>
+<div class="row"><span class="b">${o.type.replace('-', ' ').toUpperCase()}</span><span>${o.customer && o.customer !== 'Walk-in' ? esc(o.customer) : ''}</span></div>
 <hr>
 ${o.lines.map((l) => `<div class="row b"><span>${l.qty}x ${esc(l.name)}</span></div>${l.note ? `<div style="padding-left:4mm;font-style:italic">— ${esc(l.note)}</div>` : ''}`).join('')}
 ${o.note ? `<hr><p class="b">NOTE: ${esc(o.note)}</p>` : ''}
