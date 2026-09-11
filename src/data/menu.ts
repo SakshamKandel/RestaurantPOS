@@ -144,15 +144,21 @@ export interface Settings {
   // Tax & numbering
   taxRate: number
   orderPrefix: string
-  // Hardware
+  // Hardware — printer names are Windows device names ('' = not assigned).
+  // Both roles may point at the same physical printer (single-printer shops).
+  kitchenEnabled: boolean
   kitchenPrinter: string
-  kitchenAddress: string
+  kitchenPaper: PaperWidth
+  billingEnabled: boolean
   billingPrinter: string
-  billingAddress: string
-  paperWidth: '58' | '80'
-  cashDrawer: boolean
+  billingPaper: PaperWidth
+  billingAutoPrint: boolean // print a receipt for every sale vs. on demand
+  cashDrawer: boolean // drawer plugged into the billing printer's RJ11 port
   drawerOnCash: boolean
+  drawerPin: 0 | 1 // ESC/POS pulse pin: 0 = pin 2 (most drawers), 1 = pin 5
 }
+
+export type PaperWidth = '58' | '80'
 
 export const DEFAULT_SETTINGS: Settings = {
   restaurantName: 'Khadka Kitchen',
@@ -165,11 +171,31 @@ export const DEFAULT_SETTINGS: Settings = {
   receiptFooter: 'Thank you, please come again!',
   taxRate: 0.095, // US sales tax (CA combined rate); editable per state
   orderPrefix: 'DNN',
-  kitchenPrinter: 'Epson TM-T20III Thermal (Kitchen)',
-  kitchenAddress: 'USB003 · 192.168.1.40:9100',
-  billingPrinter: 'Epson TM-T88V Thermal (Billing)',
-  billingAddress: 'USB001 · 192.168.1.41:9100',
-  paperWidth: '80',
-  cashDrawer: true,
+  kitchenEnabled: true,
+  kitchenPrinter: '',
+  kitchenPaper: '80',
+  billingEnabled: true,
+  billingPrinter: '',
+  billingPaper: '80',
+  billingAutoPrint: true,
+  cashDrawer: false,
   drawerOnCash: true,
+  drawerPin: 0,
+}
+
+/** Bring a stored settings object (possibly from an older version) up to the
+ *  current schema. Only ever adds/renames fields — never drops user data. */
+export function migrateSettings(input: Partial<Settings>): Settings {
+  const raw = input as Partial<Settings> & { paperWidth?: PaperWidth }
+  const legacyPaper = raw.paperWidth ?? '80'
+  const isFake = (n: unknown) => typeof n === 'string' && /^Epson TM-T(20III|88V) Thermal/.test(n)
+  return {
+    ...DEFAULT_SETTINGS,
+    ...raw,
+    // pre-0.4 stores carried demo printer names that never existed on the PC
+    kitchenPrinter: isFake(raw.kitchenPrinter) ? '' : (raw.kitchenPrinter ?? ''),
+    billingPrinter: isFake(raw.billingPrinter) ? '' : (raw.billingPrinter ?? ''),
+    kitchenPaper: raw.kitchenPaper ?? legacyPaper,
+    billingPaper: raw.billingPaper ?? legacyPaper,
+  }
 }

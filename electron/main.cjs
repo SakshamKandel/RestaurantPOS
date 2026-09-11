@@ -258,6 +258,10 @@ ipcMain.handle('images:pick', async () => {
 ipcMain.handle('printers:print', (_e, { deviceName, html, paperWidthMm }) => {
   return new Promise((resolve) => {
     const win = new BrowserWindow({ show: false })
+    const timer = setTimeout(() => {
+      try { win.close() } catch {}
+      resolve({ ok: false, reason: 'Printer did not respond within 20s' })
+    }, 20000)
     win.webContents.once('did-finish-load', () => {
       win.webContents.print(
         {
@@ -268,12 +272,72 @@ ipcMain.handle('printers:print', (_e, { deviceName, html, paperWidthMm }) => {
           pageSize: { width: paperWidthMm * 1000, height: 300000 }, // microns
         },
         (ok, failureReason) => {
+          clearTimeout(timer)
           win.close()
-          resolve({ ok, reason: failureReason || null })
+          resolve({ ok, reason: ok ? null : failureReason || 'Spooler rejected the job' })
         },
       )
     })
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+  })
+})
+
+// --- Raw ESC/POS bytes → Windows spooler (RAW datatype) via winspool.drv ---
+// Used for the cash-drawer pulse (ESC p m t1 t2). HTML printing goes through the
+// driver and can't emit control bytes, so we P/Invoke the spooler from PowerShell.
+const RAW_PRINT_PS = `
+$Printer = $env:KPOS_PRINTER
+$Base64 = $env:KPOS_BYTES
+$sig = @'
+using System;
+using System.Runtime.InteropServices;
+public class RawPrinter {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+  public struct DOCINFOW { public string pDocName; public string pOutputFile; public string pDataType; }
+  [DllImport("winspool.drv", EntryPoint="OpenPrinterW", SetLastError=true, CharSet=CharSet.Unicode)]
+  public static extern bool OpenPrinter(string src, out IntPtr h, IntPtr pd);
+  [DllImport("winspool.drv", SetLastError=true)] public static extern bool ClosePrinter(IntPtr h);
+  [DllImport("winspool.drv", EntryPoint="StartDocPrinterW", SetLastError=true, CharSet=CharSet.Unicode)]
+  public static extern int StartDocPrinter(IntPtr h, int level, ref DOCINFOW di);
+  [DllImport("winspool.drv", SetLastError=true)] public static extern bool EndDocPrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError=true)] public static extern bool StartPagePrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError=true)] public static extern bool EndPagePrinter(IntPtr h);
+  [DllImport("winspool.drv", SetLastError=true)] public static extern bool WritePrinter(IntPtr h, byte[] b, int n, out int w);
+  public static string Send(string printer, byte[] bytes) {
+    IntPtr h;
+    if (!OpenPrinter(printer, out h, IntPtr.Zero)) return "OpenPrinter failed (" + Marshal.GetLastWin32Error() + ")";
+    try {
+      var di = new DOCINFOW { pDocName = "KhadkaPOS raw", pDataType = "RAW" };
+      if (StartDocPrinter(h, 1, ref di) == 0) return "StartDocPrinter failed (" + Marshal.GetLastWin32Error() + ")";
+      StartPagePrinter(h);
+      int written;
+      bool ok = WritePrinter(h, bytes, bytes.Length, out written);
+      EndPagePrinter(h); EndDocPrinter(h);
+      return ok && written == bytes.Length ? "OK" : "WritePrinter failed (" + Marshal.GetLastWin32Error() + ")";
+    } finally { ClosePrinter(h); }
+  }
+}
+'@
+Add-Type -TypeDefinition $sig -ErrorAction Stop
+[RawPrinter]::Send($Printer, [Convert]::FromBase64String($Base64))
+`
+
+ipcMain.handle('printers:raw', (_e, { deviceName, bytes }) => {
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process')
+    const b64 = Buffer.from(bytes).toString('base64')
+    // Values travel via env vars: -Command re-tokenises its arguments, so a
+    // printer name with spaces would be split (and it avoids any quoting issues).
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', RAW_PRINT_PS],
+      { timeout: 15000, windowsHide: true, env: { ...process.env, KPOS_PRINTER: deviceName, KPOS_BYTES: b64 } },
+      (err, stdout, stderr) => {
+        const out = String(stdout || '').trim()
+        if (err) return resolve({ ok: false, reason: (stderr || err.message || 'raw print failed').toString().split('\n')[0].trim() })
+        resolve(out === 'OK' ? { ok: true, reason: null } : { ok: false, reason: out || 'raw print failed' })
+      },
+    )
   })
 })
 

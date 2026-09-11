@@ -21,6 +21,7 @@ import InfoPage from './pages/InfoPage'
 import StaffPage from './pages/StaffPage'
 import {
   LINE_ORDERS,
+  migrateSettings,
   type Category,
   type CategoryId,
   type Customer,
@@ -43,6 +44,8 @@ import {
   onUpdateNone,
   persist,
   printDocument,
+  printRaw,
+  drawerKickBytes,
   timeAgo,
   type DetectedPrinter,
   type Discount,
@@ -57,7 +60,7 @@ import {
   type Shift,
   type UpdateInfo,
 } from './store'
-import { kickHtml, kitchenHtml, receiptHtml, testHtml } from './print/docs'
+import { kitchenHtml, receiptHtml, testHtml } from './print/docs'
 import type { DisplayOrder } from './components/OrderLine'
 import type { CartMap } from './components/MenuSection'
 
@@ -112,6 +115,7 @@ export default function App() {
         setState({
           ...initialState,
           ...saved,
+          settings: migrateSettings(saved.settings ?? {}),
           // jobs that were mid-flight when the app closed show as failed → retryable
           printJobs: (saved.printJobs ?? []).map((j) =>
             j.status === 'pending' ? { ...j, status: 'failed' as const } : j,
@@ -143,101 +147,124 @@ export default function App() {
     }))
 
   // ---------- Print queue → real printers when detected, simulated otherwise ----------
-  const markJob = (id: string, status: PrintJob['status']) =>
+  const markJob = (id: string, status: PrintJob['status'], error?: string) =>
     setState((s) => ({
       ...s,
-      printJobs: s.printJobs.map((j) => (j.id === id ? { ...j, status } : j)),
+      printJobs: s.printJobs.map((j) => (j.id === id ? { ...j, status, error } : j)),
     }))
 
-  const processJob = (job: PrintJob, order?: PlacedOrder) => {
-    const s = state.settings
-    const deviceName = job.role === 'kitchen' ? s.kitchenPrinter : s.billingPrinter
-    const html =
-      job.docType === 'KITCHEN TICKET' && order
-        ? kitchenHtml(order, s)
-        : job.docType === 'RECEIPT' && order
-          ? receiptHtml(order, s, job.copy)
-          : job.docType === 'TEST'
-            ? testHtml(job.role, s)
-            : kickHtml(s)
+  const deviceFor = (role: PrinterRole) =>
+    role === 'kitchen' ? state.settings.kitchenPrinter : state.settings.billingPrinter
+  const paperFor = (role: PrinterRole) =>
+    Number(role === 'kitchen' ? state.settings.kitchenPaper : state.settings.billingPaper)
+  const isDetected = (name: string) => !!name && printers.some((p) => p.name === name)
 
-    const detected = printers.some((p) => p.name === deviceName)
-    const real = detected ? printDocument(deviceName, html, Number(s.paperWidth)) : null
-
-    if (real) {
-      real
-        .then((res) => markJob(job.id, res.ok ? 'printed' : 'failed'))
-        .catch(() => markJob(job.id, 'failed'))
-    } else {
-      // no matching physical printer — simulate spooler accept
-      window.setTimeout(
-        () => markJob(job.id, 'printed'),
-        job.role === 'kitchen' ? 900 : 1500,
-      )
-    }
+  /** Why a role can't print right now, or null if it's ready. */
+  const roleProblem = (role: PrinterRole): string | null => {
+    const dev = deviceFor(role)
+    if (!dev) return 'No printer assigned in Settings'
+    if (!isDetected(dev)) return `"${dev}" is not installed on this PC`
+    return null
   }
 
-  const enqueueJobs = (order: PlacedOrder, extra: PrintJob[] = []) => {
-    const jobs: PrintJob[] = [
-      { id: uid(), orderNumber: order.number, docType: 'KITCHEN TICKET', role: 'kitchen', status: 'pending', copy: false, createdAt: Date.now() },
-      { id: uid(), orderNumber: order.number, docType: 'RECEIPT', role: 'billing', status: 'pending', copy: false, createdAt: Date.now() },
-      ...extra,
-    ]
-    setState((s) => ({ ...s, printJobs: [...jobs, ...s.printJobs] }))
+  /** Send one job to hardware. Never fakes success: a job is 'printed' only
+   *  when the Windows spooler accepted it, otherwise 'failed' with the reason. */
+  const processJob = (job: PrintJob, order?: PlacedOrder) => {
+    const s = state.settings
+    const deviceName = deviceFor(job.role)
+    const problem = roleProblem(job.role)
+    if (problem) return markJob(job.id, 'failed', problem)
+
+    const send =
+      job.docType === 'DRAWER KICK'
+        ? printRaw(deviceName, drawerKickBytes(s.drawerPin))
+        : printDocument(
+            deviceName,
+            job.docType === 'KITCHEN TICKET' && order
+              ? kitchenHtml(order, s)
+              : job.docType === 'RECEIPT' && order
+                ? receiptHtml(order, s, job.copy)
+                : testHtml(job.role, s),
+            paperFor(job.role),
+          )
+
+    if (!send) return markJob(job.id, 'failed', 'Printing is only available in the desktop app')
+    send
+      .then((res) => markJob(job.id, res.ok ? 'printed' : 'failed', res.ok ? undefined : res.reason ?? 'Unknown printer error'))
+      .catch((e) => markJob(job.id, 'failed', String(e?.message ?? e)))
+  }
+
+  const makeJob = (docType: DocType, role: PrinterRole, orderNumber = '—', copy = false): PrintJob => ({
+    id: uid(),
+    orderNumber,
+    docType,
+    role,
+    status: 'pending',
+    copy,
+    createdAt: Date.now(),
+    device: deviceFor(role) || undefined,
+  })
+
+  /** Post-sale documents, honouring per-role settings:
+   *  kitchen ticket (if kitchen printing on) · receipt (if auto-print on) · drawer pulse (cash). */
+  const enqueueJobs = (order: PlacedOrder, kickDrawer: boolean) => {
+    const s = state.settings
+    const jobs: PrintJob[] = []
+    if (s.kitchenEnabled) jobs.push(makeJob('KITCHEN TICKET', 'kitchen', order.number))
+    if (s.billingEnabled && s.billingAutoPrint) jobs.push(makeJob('RECEIPT', 'billing', order.number))
+    if (kickDrawer) jobs.push(makeJob('DRAWER KICK', 'billing', order.number))
+    if (!jobs.length) return
+    setState((st) => ({ ...st, printJobs: [...jobs, ...st.printJobs] }))
     jobs.forEach((j) => processJob(j, order))
   }
 
   const queueJob = (docType: DocType, role: PrinterRole, orderNumber = '—') => {
-    const job: PrintJob = {
-      id: uid(),
-      orderNumber,
-      docType,
-      role,
-      status: 'pending',
-      copy: false,
-      createdAt: Date.now(),
-    }
+    const job = makeJob(docType, role, orderNumber)
     setState((s) => ({ ...s, printJobs: [job, ...s.printJobs] }))
     processJob(job)
+    return job
   }
 
   const openDrawer = (reason: string) => {
-    if (!state.settings.cashDrawer) {
-      flash('Cash drawer disabled in Settings')
-      return
-    }
+    const s = state.settings
+    if (!s.cashDrawer) return flash('Cash drawer is turned off in Settings')
+    const problem = roleProblem('billing')
+    if (problem) return flash(`Can't open drawer — ${problem}`)
     queueJob('DRAWER KICK', 'billing')
     audit('drawer.open', reason)
-    flash(`Drawer kicked via ${state.settings.billingPrinter}`)
+    flash(`Drawer pulse sent → ${s.billingPrinter}`)
   }
 
   const testPrint = (role: PrinterRole) => {
+    const problem = roleProblem(role)
+    if (problem) return flash(`Can't test ${role} printer — ${problem}`)
     queueJob('TEST', role)
     audit('printer.test', role)
-    flash(`Test page queued → ${role === 'kitchen' ? state.settings.kitchenPrinter : state.settings.billingPrinter}`)
+    flash(`Test page sent → ${deviceFor(role)}`)
   }
 
   const retryJob = (id: string) => {
     const job = state.printJobs.find((j) => j.id === id)
     if (!job) return
     const order = state.orders.find((o) => o.number === job.orderNumber)
-    markJob(id, 'pending')
+    if (!order && (job.docType === 'KITCHEN TICKET' || job.docType === 'RECEIPT'))
+      return markJob(id, 'failed', 'Original order no longer exists')
+    setState((s) => ({
+      ...s,
+      printJobs: s.printJobs.map((j) =>
+        j.id === id ? { ...j, status: 'pending', error: undefined, device: deviceFor(j.role) || undefined } : j,
+      ),
+    }))
     processJob(job, order)
   }
 
   const reprintReceipt = (o: PlacedOrder) => {
-    const job: PrintJob = {
-      id: uid(),
-      orderNumber: o.number,
-      docType: 'RECEIPT',
-      role: 'billing',
-      status: 'pending',
-      copy: true,
-      createdAt: Date.now(),
-    }
+    const problem = roleProblem('billing')
+    if (problem) return flash(`Can't print — ${problem}`)
+    const job = makeJob('RECEIPT', 'billing', o.number, true)
     setState((s) => ({ ...s, printJobs: [job, ...s.printJobs] }))
     processJob(job, o)
-    flash(`COPY receipt queued → ${state.settings.billingPrinter}`)
+    flash(`COPY receipt sent → ${state.settings.billingPrinter}`)
   }
 
   // ---------- Cart ----------
@@ -367,11 +394,9 @@ export default function App() {
           : c,
       ),
     }))
-    const kick: PrintJob[] =
-      method === 'cash' && state.settings.drawerOnCash && state.settings.cashDrawer
-        ? [{ id: uid(), orderNumber: order.number, docType: 'DRAWER KICK', role: 'billing', status: 'pending', copy: false, createdAt: Date.now() }]
-        : []
-    enqueueJobs(order, kick) // kitchen ticket → chef printer, receipt (+drawer kick) → billing printer
+    const st = state.settings
+    const kick = method === 'cash' && st.cashDrawer && st.drawerOnCash
+    enqueueJobs(order, kick) // kitchen ticket → chef printer · receipt (+drawer pulse) → billing printer
     setLastOrder(order)
     audit('order.completed', `${order.number} · ${method} · ${(total / 100).toFixed(2)}`)
     setCart({})
@@ -379,7 +404,12 @@ export default function App() {
     setOrderNote('')
     setPayOpen(false)
     setReceipt(order)
-    flash('Kitchen ticket → chef printer · receipt → billing printer')
+    const sent = [
+      st.kitchenEnabled && 'kitchen ticket',
+      st.billingEnabled && st.billingAutoPrint && 'receipt',
+      kick && 'drawer',
+    ].filter(Boolean)
+    flash(sent.length ? `Order ${order.number} paid · ${sent.join(' + ')} sent` : `Order ${order.number} paid`)
   }
 
   const holdOrder = () => {
@@ -792,6 +822,16 @@ export default function App() {
           settings={state.settings}
           printers={printers}
           onRetry={retryJob}
+          onRetryAllFailed={() => {
+            const failed = state.printJobs.filter((j) => j.status === 'failed')
+            failed.forEach((j) => retryJob(j.id))
+            flash(`Retrying ${failed.length} job${failed.length === 1 ? '' : 's'}`)
+          }}
+          onClearHistory={() => {
+            setState((s) => ({ ...s, printJobs: s.printJobs.filter((j) => j.status === 'pending') }))
+            flash('Print history cleared')
+          }}
+          onOpenSettings={() => setView('settings')}
         />
       )}
       {view === 'transactions' && (
@@ -830,9 +870,13 @@ export default function App() {
           settings={state.settings}
           printers={printers}
           onRefreshPrinters={refreshPrinters}
-          onChange={(settings) => setState((s) => ({ ...s, settings }))}
-          onSaved={() => {
-            audit('settings.saved', 'store/device configuration updated')
+          onSave={(settings) => {
+            const prev = state.settings
+            const changed = (Object.keys(settings) as (keyof typeof settings)[])
+              .filter((k) => settings[k] !== prev[k])
+              .join(', ')
+            setState((s) => ({ ...s, settings }))
+            audit('settings.saved', changed || 'no changes')
             flash('Settings saved')
           }}
           onTestPrint={testPrint}

@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('pos', {
   backup: (state) => ipcRenderer.invoke('store:backup', state),
   listPrinters: () => ipcRenderer.invoke('printers:list'),
   printDoc: (payload) => ipcRenderer.invoke('printers:print', payload),
+  printRaw: (payload) => ipcRenderer.invoke('printers:raw', payload),
   pickImage: () => ipcRenderer.invoke('images:pick'),
   // updates
   appVersion: () => ipcRenderer.invoke('app:version'),

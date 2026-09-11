@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { DatabaseBackup, HardDrive, Info, Printer, ScrollText, Vault, WifiOff } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { DatabaseBackup, HardDrive, Info, Printer, ScrollText, Vault, Wifi, WifiOff } from 'lucide-react'
 import type { Settings } from '../data/menu'
 import { checkForUpdates, type AuditEvent, type DetectedPrinter } from '../store'
 import logoIcon from '../assets/icon.png'
@@ -15,13 +15,55 @@ interface Props {
 
 export default function InfoPage({ settings, orderCount, audit, printers, version, onBackup }: Props) {
   const [check, setCheck] = useState<'idle' | 'checking' | { status: string; version?: string; message?: string }>('idle')
-  const detected = (name: string) => printers.some((p) => p.name === name)
+  const detected = (name: string) => !!name && printers.some((p) => p.name === name)
+  const [online, setOnline] = useState(navigator.onLine)
+  useEffect(() => {
+    const up = () => setOnline(true)
+    const down = () => setOnline(false)
+    window.addEventListener('online', up)
+    window.addEventListener('offline', down)
+    return () => {
+      window.removeEventListener('online', up)
+      window.removeEventListener('offline', down)
+    }
+  }, [])
+
+  const printerRow = (label: string, enabled: boolean, device: string, paper: string) => ({
+    label,
+    icon: Printer,
+    ok: enabled && detected(device),
+    badge: !enabled ? 'OFF' : detected(device) ? 'READY' : device ? 'MISSING' : 'UNASSIGNED',
+    detail: !enabled
+      ? 'Turned off in Settings'
+      : !device
+        ? 'No Windows printer assigned'
+        : detected(device)
+          ? `${device} · ${paper}mm`
+          : `${device} is not installed on this PC`,
+  })
+  const billingReady = settings.billingEnabled && detected(settings.billingPrinter)
   const health = [
-    { label: 'Local database', detail: `${orderCount} orders · auto-backup on every change`, ok: true, icon: HardDrive },
-    { label: 'Kitchen printer', detail: `${settings.kitchenPrinter} · ${settings.kitchenAddress}`, ok: detected(settings.kitchenPrinter), icon: Printer },
-    { label: 'Billing printer', detail: `${settings.billingPrinter} · ${settings.billingAddress}`, ok: detected(settings.billingPrinter), icon: Printer },
-    { label: 'Cash drawer', detail: settings.cashDrawer ? `RJ11 kick on billing printer · ${settings.paperWidth}mm` : 'Disabled in Settings', ok: settings.cashDrawer, icon: Vault },
-    { label: 'Internet', detail: 'Offline mode — selling works regardless', ok: false, icon: WifiOff },
+    { label: 'Local database', detail: `${orderCount} orders · auto-backup on every change`, ok: true, badge: 'OK', icon: HardDrive },
+    printerRow('Kitchen printer', settings.kitchenEnabled, settings.kitchenPrinter, settings.kitchenPaper),
+    printerRow('Billing printer', settings.billingEnabled, settings.billingPrinter, settings.billingPaper),
+    {
+      label: 'Cash drawer',
+      icon: Vault,
+      ok: settings.cashDrawer && billingReady,
+      badge: !settings.cashDrawer ? 'OFF' : billingReady ? 'READY' : 'BLOCKED',
+      detail: !settings.cashDrawer
+        ? 'Not connected'
+        : billingReady
+          ? `ESC/POS pulse via ${settings.billingPrinter} · pin ${settings.drawerPin === 0 ? 2 : 5}`
+          : 'Needs a working billing printer',
+    },
+    {
+      label: 'Internet',
+      icon: online ? Wifi : WifiOff,
+      ok: online,
+      badge: online ? 'ONLINE' : 'OFFLINE',
+      detail: online ? 'Update checks available — selling never depends on this' : 'Offline mode — selling works regardless',
+    },
   ]
 
   return (
@@ -97,7 +139,7 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
                       h.ok ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
                     }`}
                   >
-                    {h.ok ? 'OK' : h.label === 'Internet' ? 'OFFLINE' : 'OFF'}
+                    {h.badge}
                   </span>
                 </li>
               )

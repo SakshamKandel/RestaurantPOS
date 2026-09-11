@@ -13,7 +13,7 @@ hr{border:none;border-top:1px dashed #000;margin:3mm 0}
 </style></head><body>${body}</body></html>`
 
 export function receiptHtml(o: PlacedOrder, s: Settings, copy = false): string {
-  const w = Number(s.paperWidth)
+  const w = Number(s.billingPaper)
   return base(
     w,
     `
@@ -43,7 +43,7 @@ ${o.discount ? `<div class="row"><span>Discount</span><span>-${formatMoney(o.dis
 
 export function kitchenHtml(o: PlacedOrder, s: Settings): string {
   return base(
-    Number(s.paperWidth),
+    Number(s.kitchenPaper),
     `
 <p class="c big">** KITCHEN **</p>
 <hr>
@@ -58,21 +58,21 @@ ${o.note ? `<hr><p class="b">NOTE: ${esc(o.note)}</p>` : ''}
 }
 
 export function testHtml(role: string, s: Settings): string {
+  const kitchen = role === 'kitchen'
+  const paper = kitchen ? s.kitchenPaper : s.billingPaper
   return base(
-    Number(s.paperWidth),
+    Number(paper),
     `
 <p class="c big">TEST PRINT</p>
 <p class="c">${esc(s.restaurantName)}</p>
 <hr>
-<div class="row"><span>Role</span><span>${role.toUpperCase()}</span></div>
-<div class="row"><span>Printer</span><span>${esc(role === 'kitchen' ? s.kitchenPrinter : s.billingPrinter)}</span></div>
-<div class="row"><span>Paper</span><span>${s.paperWidth}mm</span></div>
+<div class="row"><span>Role</span><span>${kitchen ? 'KITCHEN' : 'BILLING'}</span></div>
+<div class="row"><span>Printer</span><span>${esc(kitchen ? s.kitchenPrinter : s.billingPrinter)}</span></div>
+<div class="row"><span>Paper</span><span>${paper}mm</span></div>
 <div class="row"><span>Time</span><span>${new Date().toLocaleTimeString()}</span></div>
 <hr>
-<p class="c">Printer OK</p>`,
+<p class="c">|||||||||| 0123456789 ||||||||||</p>
+<p class="c">If the edges are cut off, switch paper width in Settings.</p>
+<p class="c b">Printer OK</p>`,
   )
 }
-
-// Drawer kick: blank slip — real RJ11 kick happens via the printer driver
-// ("cash drawer open at document start/end") or a future ESC/POS adapter.
-export const kickHtml = (s: Settings) => base(Number(s.paperWidth), '<p class="c">·</p>')

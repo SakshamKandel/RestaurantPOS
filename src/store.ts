@@ -66,6 +66,10 @@ export interface PrintJob {
   status: 'pending' | 'printed' | 'failed'
   copy: boolean
   createdAt: number
+  /** Spooler / driver failure text, or why the job could not be sent. */
+  error?: string
+  /** Windows device the job was (or will be) sent to. */
+  device?: string
 }
 
 // ---------- Cash drawer & shift ----------
@@ -156,6 +160,7 @@ interface PosBridge {
   backup: (s: PosState) => Promise<string>
   listPrinters?: () => Promise<DetectedPrinter[]>
   printDoc?: (p: { deviceName: string; html: string; paperWidthMm: number }) => Promise<PrintResult>
+  printRaw?: (p: { deviceName: string; bytes: number[] }) => Promise<PrintResult>
   pickImage?: () => Promise<string | null>
   appVersion?: () => Promise<string>
   checkUpdates?: () => Promise<{ status: 'none' | 'found' | 'error'; version?: string; message?: string } | null>
@@ -211,6 +216,15 @@ export function printDocument(
   if (!bridge?.printDoc) return null
   return bridge.printDoc({ deviceName, html, paperWidthMm })
 }
+
+/** Send raw ESC/POS bytes (e.g. drawer pulse) straight to the Windows spooler. */
+export function printRaw(deviceName: string, bytes: number[]): Promise<PrintResult> | null {
+  if (!bridge?.printRaw) return null
+  return bridge.printRaw({ deviceName, bytes })
+}
+
+/** ESC p m t1 t2 — pulse the drawer solenoid on pin m for t1*2ms, off t2*2ms. */
+export const drawerKickBytes = (pin: 0 | 1): number[] => [0x1b, 0x70, pin, 0x19, 0xfa]
 
 export const appVersion = () => bridge?.appVersion?.() ?? Promise.resolve('dev')
 export const checkForUpdates = () => bridge?.checkUpdates?.() ?? Promise.resolve(null)
