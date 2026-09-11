@@ -19,6 +19,7 @@ interface ItemForm {
   id: string | null
   name: string
   price: string
+  cost: string
   category: CategoryId
   available: boolean
   image: string
@@ -33,6 +34,7 @@ const emptyForm = (category: CategoryId): ItemForm => ({
   id: null,
   name: '',
   price: '',
+  cost: '',
   category,
   available: true,
   image: '',
@@ -79,6 +81,7 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
       id: m.id,
       name: m.name,
       price: (m.price / 100).toFixed(2),
+      cost: m.cost === undefined ? '' : (m.cost / 100).toFixed(2),
       category: m.category,
       available: m.available,
       image: m.image,
@@ -93,11 +96,14 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
     if (!form || !form.name.trim() || !form.price) return
     const cents = Math.round(parseFloat(form.price) * 100)
     if (Number.isNaN(cents) || cents < 0) return
+    const costCents = form.cost.trim() === '' ? undefined : Math.round(parseFloat(form.cost) * 100)
+    const cost = costCents === undefined || Number.isNaN(costCents) || costCents < 0 ? undefined : costCents
     const stock = form.stock.trim() === '' ? undefined : Math.max(0, Math.round(parseInt(form.stock, 10) || 0))
     onSave({
       id: form.id ?? `item-${Date.now()}`,
       name: form.name.trim(),
       price: cents,
+      cost,
       category: form.category,
       // tracked stock hitting 0 auto-marks sold out
       available: stock === 0 ? false : form.available,
@@ -305,6 +311,14 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
                   placeholder="Price (e.g. 9.50)"
                   inputMode="decimal"
                   className="flex-1 rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[13px] font-medium outline-none focus:border-primary"
+                />
+                <input
+                  value={form.cost}
+                  onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                  placeholder="Cost (optional)"
+                  title="Unit cost — powers the margin report"
+                  inputMode="decimal"
+                  className="w-32 rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[13px] font-medium outline-none focus:border-primary"
                 />
                 <select
                   value={form.category}

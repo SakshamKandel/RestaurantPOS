@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('pos', {
   printRaw: (payload) => ipcRenderer.invoke('printers:raw', payload),
   pickImage: () => ipcRenderer.invoke('images:pick'),
   integrity: () => ipcRenderer.invoke('store:integrity'),
+  resetDb: (actor) => ipcRenderer.invoke('db:reset', { actor }),
   login: (id, pin) => ipcRenderer.invoke('auth:login', { id, pin }),
   setPin: (id, pin) => ipcRenderer.invoke('auth:set-pin', { id, pin }),
   exportCsv: (payload) => ipcRenderer.invoke('export:csv', payload),

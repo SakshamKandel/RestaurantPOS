@@ -255,6 +255,22 @@ export default function SettingsPage({ settings, printers, onRefreshPrinters, on
               />
               <Field label="Order number prefix" value={draft.orderPrefix} onChange={(v) => set('orderPrefix', v.toUpperCase().slice(0, 5))} />
             </div>
+            <div className="mt-3.5">
+              <label className="block">
+                <span className="text-[11px] font-bold text-neutral-500">Business day ends at (reporting)</span>
+                <select
+                  value={draft.businessDayCutoff}
+                  onChange={(e) => set('businessDayCutoff', Number(e.target.value))}
+                  className="mt-1 w-full cursor-pointer rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[12.5px] font-medium outline-none focus:border-primary"
+                >
+                  {[0, 1, 2, 3, 4, 5, 6].map((h) => (
+                    <option key={h} value={h}>
+                      {h === 0 ? 'Midnight — calendar days' : `${h}:00 AM — sales before ${h}am count as the day before`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
             {/* Per-item tax classes */}
             <div className="mt-4">

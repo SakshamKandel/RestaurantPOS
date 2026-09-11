@@ -56,8 +56,11 @@ node scripts/dbtest.cjs   # storage + auth layer test
 - **Customers** — searchable CRM, add profiles, start an order for a customer
 - **Transactions** — order history, advance status, reprint (COPY), refunds,
   **CSV export** (accounting-friendly, one row per order line)
-- **Report** — net/avg/tax/refunds, sales-by-hour chart, tender split,
-  top items, **Z-report CSV export**
+- **Report** — date ranges (today/yesterday/7d/30d/month/custom, aware of a
+  configurable **business-day cutoff**), net vs gross with period-over-period
+  comparison, sales by hour/day/month, tender split, breakdowns **by order
+  type, category and staff**, top items by qty/revenue with per-item margin,
+  item **cost (COGS) → margin reporting**, **range-scoped CSV export**
 - **Shift** — cash drawer float, paid-in/out, blind count, expected-vs-counted
   (split-payment and refund aware)
 - **Settings** — restaurant identity, tax classes, order prefix, printer roles

@@ -195,4 +195,25 @@ function close(legacyJson) {
   db = null
 }
 
-module.exports = { open, load, commit, exportJson, integrity, close, syncLegacyJson, staffRow, updateStaffRow, getKv, setKv, get file() { return dbFile } }
+/**
+ * Factory reset: close the DB and delete pos.db (+ WAL/SHM sidecars) and the
+ * legacy JSON mirror. Backups, images and logs are untouched. The app is
+ * expected to relaunch immediately after — load()/commit() become no-ops.
+ */
+function reset(legacyJson) {
+  const file = dbFile
+  try {
+    db?.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    db?.close()
+  } catch {}
+  db = null
+  snapshot = null
+  dbFile = ''
+  for (const f of [file, `${file}-wal`, `${file}-shm`, legacyJson]) {
+    try {
+      if (f) fs.unlinkSync(f)
+    } catch {}
+  }
+}
+
+module.exports = { open, load, commit, exportJson, integrity, close, reset, syncLegacyJson, staffRow, updateStaffRow, getKv, setKv, get file() { return dbFile } }

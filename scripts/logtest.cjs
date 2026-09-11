@@ -17,6 +17,8 @@ const electronStub = {
     whenReady: () => Promise.resolve(),
     on() {},
     quit() {},
+    relaunch() {},
+    exit() {}, // stubbed — real app exits here
   },
   BrowserWindow: function () { return fakeWin },
   ipcMain: { handle: (ch, fn) => handlers.set(ch, fn) },
@@ -62,6 +64,16 @@ setTimeout(() => {
   console.log('missing file:', handlers.get('logs:read')(null, 'nope.txt') === null)
   console.log('open returns dir:', handlers.get('logs:open')(null))
   console.log('clear:', handlers.get('logs:clear')(null, 'auth-errors.txt'), '| after clear:', handlers.get('logs:list')(null).files.map((f) => f.name).join(', '))
+
+  // --- db:reset: writes a final backup, deletes pos.db + pos-store.json ---
+  const dbFile = path.join(dir, 'pos.db')
+  const storeFile = path.join(dir, 'pos-store.json')
+  fs.writeFileSync(storeFile, '{}') // mirror normally synced at quit
+  console.log('pre-reset pos.db exists:', fs.existsSync(dbFile))
+  console.log('db:reset →', handlers.get('db:reset')(null, { actor: 'Admin' }))
+  console.log('pos.db deleted:', !fs.existsSync(dbFile), '| mirror deleted:', !fs.existsSync(storeFile))
+  const backups = fs.readdirSync(path.join(dir, 'backups')).filter((f) => f.startsWith('pos-backup-'))
+  console.log('final backup kept:', backups.length > 0, '| reset logged:', fs.readFileSync(path.join(dir, 'logs', 'app-errors.txt'), 'utf8').includes('factory reset'))
 
   fs.rmSync(dir, { recursive: true, force: true })
   process.exit(0)

@@ -526,6 +526,8 @@ export default function App() {
         taxClass: l.item.taxClass,
         taxRate: rateFor(l.item),
         itemId: l.item.id,
+        category: l.item.category,
+        cost: l.item.cost,
         tax: lineTaxes[i],
         net: lineNets[i],
       })),
@@ -1174,7 +1176,14 @@ export default function App() {
           onOpenDrawer={openDrawer}
         />
       )}
-      {view === 'report' && <ReportPage orders={state.orders} />}
+      {view === 'report' && (
+        <ReportPage
+          orders={state.orders}
+          menu={state.menu}
+          categories={state.categories}
+          settings={state.settings}
+        />
+      )}
       {view === 'staff' && (
         <StaffPage
           staff={state.staff}
@@ -1216,6 +1225,7 @@ export default function App() {
           orderCount={state.orders.length}
           audit={state.audit}
           printers={printers}
+          staff={state.staff}
           version={version}
           onBackup={() =>
             backupNow(state).then((f) => {

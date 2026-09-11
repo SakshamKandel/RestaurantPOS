@@ -139,6 +139,23 @@ ipcMain.handle('store:backup', () => {
 
 ipcMain.handle('store:integrity', () => ({ result: db.integrity(), file: db.file }))
 
+// --- Factory reset: last-chance backup → wipe DB files → relaunch to the
+//     first-boot wizard. Keeps backups/, logs/ and images/ on disk. ---
+ipcMain.handle('db:reset', (_e, payload) => {
+  try {
+    const actor = payload?.actor ?? 'unknown'
+    logToFile('app', `database factory reset · authorized by ${actor}`)
+    rotateBackup(db.exportJson()) // pre-reset snapshot survives in backups/
+    db.reset(storePath())
+    app.relaunch()
+    app.exit(0)
+    return true // unreachable — the process is already leaving
+  } catch (e) {
+    logToFile('app', `database reset failed: ${e?.message ?? e}`)
+    return false
+  }
+})
+
 // --- CSV export via native save dialog ---
 ipcMain.handle('export:csv', async (_e, { suggestedName, csv }) => {
   const res = await dialog.showSaveDialog(mainWindow, {
@@ -318,6 +335,13 @@ autoUpdater.autoDownload = true
 autoUpdater.autoInstallOnAppQuit = false // we decide when to install
 
 function setupAutoUpdater() {
+  // Update metadata (app-update.yml/latest.yml) only exists in the packaged
+  // installer — in dev/unpackaged runs every check resolves to null, so don't
+  // even wire the updater up.
+  if (!app.isPackaged) {
+    ulog('unpackaged build — updater disabled')
+    return
+  }
   autoUpdater.logger = {
     info: (m) => ulog(`info ${m}`),
     warn: (m) => ulog(`warn ${m}`),
@@ -377,11 +401,19 @@ function setupAutoUpdater() {
 }
 
 ipcMain.handle('update:install', () => {
+  if (!app.isPackaged) return false
   preUpdateBackup()
   autoUpdater.quitAndInstall()
+  return true
 })
-ipcMain.handle('update:check', () =>
-  Promise.race([
+ipcMain.handle('update:check', () => {
+  if (!app.isPackaged)
+    return Promise.resolve({
+      status: 'dev',
+      version: app.getVersion(),
+      message: 'Dev/unpackaged build — update checks only work in the installed app',
+    })
+  return Promise.race([
     autoUpdater
       .checkForUpdates()
       .then((r) => {
@@ -404,8 +436,8 @@ ipcMain.handle('update:check', () =>
         res({ status: 'error', message: 'slow connection — still trying in the background' })
       }, 45000),
     ),
-  ]),
-)
+  ])
+})
 ipcMain.handle('app:version', () => app.getVersion())
 
 // --- Menu photos: pick a file → copy into userData/images → posimg:// URL ---

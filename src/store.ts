@@ -30,6 +30,10 @@ export interface OrderLineSnap {
   taxClass?: string
   /** Rate applied at time of sale — survives later rate edits. */
   taxRate?: number
+  /** Category id at time of sale — survives menu edits/deletes. */
+  category?: string
+  /** Unit cost (COGS) in cents at time of sale. */
+  cost?: Cents
   /** Post-discount line net (the tax base), exact cents. */
   net?: Cents
   /** Line tax amount in cents. */
@@ -238,7 +242,7 @@ interface PosBridge {
   printRaw?: (p: { deviceName: string; bytes: number[] }) => Promise<PrintResult>
   pickImage?: () => Promise<string | null>
   appVersion?: () => Promise<string>
-  checkUpdates?: () => Promise<{ status: 'none' | 'found' | 'error'; version?: string; message?: string } | null>
+  checkUpdates?: () => Promise<{ status: 'none' | 'found' | 'error' | 'dev'; version?: string; message?: string } | null>
   installUpdate?: () => Promise<void>
   onUpdateAvailable?: (cb: (i: { version: string }) => void) => void
   onUpdateDownloaded?: (cb: (i: UpdateInfo) => void) => void
@@ -246,6 +250,7 @@ interface PosBridge {
   onUpdateNone?: (cb: (i: { version: string }) => void) => void
   onUpdateError?: (cb: (i: { message: string }) => void) => void
   integrity?: () => Promise<{ result: string; file: string }>
+  resetDb?: (actor: string) => Promise<boolean>
   login?: (id: string, pin: string) => Promise<LoginResult>
   setPin?: (id: string, pin: string) => Promise<{ ok: boolean; reason?: string }>
   exportCsv?: (p: { suggestedName: string; csv: string }) => Promise<string | null>
@@ -286,6 +291,14 @@ export const setPinSecure = (id: string, pin: string) =>
   bridge?.setPin?.(id, pin) ?? Promise.resolve({ ok: true })
 
 export const dbIntegrity = () => bridge?.integrity?.() ?? Promise.resolve({ result: 'n/a (browser)', file: 'localStorage' })
+
+/**
+ * Factory reset — writes a last-chance backup, deletes pos.db + the JSON
+ * mirror, then relaunches into first-boot setup. Desktop only; the returned
+ * promise never resolves on success because the process exits first.
+ */
+export const resetDatabase = (actor: string) =>
+  bridge?.resetDb?.(actor) ?? Promise.resolve(false)
 
 export const exportCsv = (suggestedName: string, csv: string) =>
   bridge?.exportCsv?.({ suggestedName, csv }) ??

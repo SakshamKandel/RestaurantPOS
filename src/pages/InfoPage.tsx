@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { DatabaseBackup, HardDrive, Info, Printer, ScrollText, Vault, Wifi, WifiOff } from 'lucide-react'
-import type { Settings } from '../data/menu'
+import { AlertTriangle, DatabaseBackup, HardDrive, Info, Printer, ScrollText, Trash2, Vault, Wifi, WifiOff } from 'lucide-react'
+import type { Settings, Staff } from '../data/menu'
 import { checkForUpdates, dbIntegrity, onUpdateAvailable, onUpdateNone, type AuditEvent, type DetectedPrinter } from '../store'
+import ResetModal from '../components/ResetModal'
 import logoIcon from '../assets/icon.png'
 
 interface Props {
@@ -9,11 +10,13 @@ interface Props {
   orderCount: number
   audit: AuditEvent[]
   printers: DetectedPrinter[]
+  staff: Staff[]
   version: string
   onBackup: () => void
 }
 
-export default function InfoPage({ settings, orderCount, audit, printers, version, onBackup }: Props) {
+export default function InfoPage({ settings, orderCount, audit, printers, staff, version, onBackup }: Props) {
+  const [resetOpen, setResetOpen] = useState(false)
   const [check, setCheck] = useState<'idle' | 'checking' | { status: string; version?: string; message?: string }>('idle')
   // A slow check may finish after the button's timeout fired — let the late
   // result overwrite the "slow connection" message rather than get lost.
@@ -188,13 +191,15 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
           </div>
           {check !== 'idle' && check !== 'checking' && (
             <p className={`mt-2.5 text-center text-[11.5px] font-bold ${
-              check.status === 'found' ? 'text-emerald-600' : check.status === 'none' ? 'text-sky-600' : 'text-amber-600'
+              check.status === 'found' ? 'text-emerald-600' : check.status === 'none' || check.status === 'dev' ? 'text-sky-600' : 'text-amber-600'
             }`}>
               {check.status === 'found'
                 ? `Update v${check.version} found — downloading in the background`
                 : check.status === 'none'
                   ? `You're on the latest version (v${check.version})`
-                  : `Couldn't reach GitHub — ${check.message ?? 'error'}. Selling is unaffected.`}
+                  : check.status === 'dev'
+                    ? check.message ?? 'Update checks only work in the installed app'
+                    : `Couldn't reach GitHub — ${check.message ?? 'error'}. Selling is unaffected.`}
             </p>
           )}
           <p className="mt-3 text-center text-[10.5px] font-medium leading-relaxed text-neutral-400">
@@ -228,6 +233,31 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
           ))}
         </ul>
       </div>
+
+      {/* Danger zone — destructive maintenance */}
+      <div className="mt-4 rounded-3xl border border-red-100 bg-white p-5 shadow-sm">
+        <p className="flex items-center gap-2 text-[13px] font-extrabold text-red-500">
+          <AlertTriangle size={15} /> Danger zone
+        </p>
+        <div className="mt-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[12.5px] font-bold">Reset database</p>
+            <p className="text-[10.5px] font-medium text-neutral-400">
+              Erase all orders, staff, menu and settings — the app restarts into first-boot
+              setup. A final backup is kept. Requires a manager or Administrator PIN.
+            </p>
+          </div>
+          <button
+            onClick={() => setResetOpen(true)}
+            className="flex shrink-0 items-center gap-2 rounded-xl border border-red-200 px-4 py-2.5 text-[12px] font-bold text-red-500 transition-colors hover:bg-red-50"
+          >
+            <Trash2 size={14} />
+            Reset…
+          </button>
+        </div>
+      </div>
+
+      {resetOpen && <ResetModal staff={staff} onClose={() => setResetOpen(false)} />}
     </div>
   )
 }

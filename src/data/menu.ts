@@ -95,6 +95,8 @@ export interface MenuItem {
   modifiers?: ModifierGroup[]
   /** Tax class id into Settings.taxClasses; absent = default rate. */
   taxClass?: string
+  /** Unit cost (COGS) in cents — powers the margin report. */
+  cost?: Cents
   /** Stock tracking: undefined = not tracked (unlimited). */
   stock?: number
   lowStockAt?: number
@@ -215,6 +217,9 @@ export interface Settings {
   taxRate: number // fallback/default rate for items without a taxClass
   taxClasses: TaxClass[] // per-item tax classes (item.taxClass → id)
   orderPrefix: string
+  /** Hour (0–6) when the business day rolls over for reporting; e.g. 4 =
+   *  sales before 4am count toward the previous day. 0 = calendar days. */
+  businessDayCutoff: number
   // Hardware — printer names are Windows device names ('' = not assigned).
   // Both roles may point at the same physical printer (single-printer shops).
   kitchenEnabled: boolean
@@ -255,6 +260,7 @@ export const DEFAULT_SETTINGS: Settings = {
   taxRate: 0.095, // US sales tax (CA combined rate); editable per state
   taxClasses: DEFAULT_TAX_CLASSES,
   orderPrefix: 'DNN',
+  businessDayCutoff: 0,
   kitchenEnabled: true,
   kitchenPrinter: '',
   kitchenPaper: '80',
