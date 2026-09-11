@@ -1,9 +1,9 @@
-# Tabetei POS
+# KhadkaPOS
 
 Offline-first desktop point-of-sale for a **US takeaway restaurant**.
 **React 19 + TypeScript + Vite + Tailwind CSS 4** UI inside an **Electron**
 shell, with a durable JSON store behind IPC
-(`%APPDATA%/tabetei-pos/pos-store.json`).
+(`%APPDATA%/khadkapos/pos-store.json`).
 
 ## Run it
 
@@ -48,7 +48,7 @@ Reports and Settings are manager-only; Log Out returns to the PIN screen.
 
 - Money is always integer cents — no floating-point currency.
 - Every state change is persisted atomically **and** writes a timestamped
-  backup to `%APPDATA%/tabetei-pos/backups/` (last 10 kept automatically).
+  backup to `%APPDATA%/khadkapos/backups/` (last 10 kept automatically).
 - Print jobs persist across restarts; a job left mid-flight on shutdown is
   marked `failed` on next launch so it can be retried — never re-printed
   silently.
@@ -71,6 +71,6 @@ scripts/electron.mjs  Launcher (strips ELECTRON_RUN_AS_NODE)
 
 - The app checks GitHub Releases for updates on launch and every 6h (only when online � sales work offline).
 - When an update downloads, you can **defer it for up to 3 days**; after that it **installs automatically**.
-- Before every install, a safety copy of the store is written to `%APPDATA%\tabetei-pos\backups\pre-update-*.json`.
-- **Rollback**: if a release misbehaves, download an older `Tabetei POS-Setup-x.y.z.exe` from the Releases page and install it. Data lives in `%APPDATA%\tabetei-pos\` (never deleted on uninstall) and the store only ever *adds* fields, so older versions can read newer data.
+- Before every install, a safety copy of the store is written to `%APPDATA%\khadkapos\backups\pre-update-*.json`.
+- **Rollback**: if a release misbehaves, download an older `KhadkaPOS-Setup-x.y.z.exe` from the Releases page and install it. Data lives in `%APPDATA%\khadkapos\` (never deleted on uninstall) and the store only ever *adds* fields, so older versions can read newer data.
 - Publishing: bump `version` in package.json ? `npx electron-builder` ? `gh release create vX.Y.Z <setup.exe> <blockmap> <latest.yml>`.

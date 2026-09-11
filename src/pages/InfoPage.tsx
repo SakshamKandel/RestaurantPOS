@@ -38,7 +38,7 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
               <Soup size={24} strokeWidth={2.4} />
             </span>
             <div>
-              <p className="text-[17px] font-extrabold">Tabetei POS</p>
+              <p className="text-[17px] font-extrabold">KhadkaPOS</p>
               <p className="text-[11.5px] font-medium text-neutral-400">
                 Version {version || '…'} · Register 01
               </p>

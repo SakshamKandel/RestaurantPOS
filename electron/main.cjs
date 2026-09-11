@@ -40,7 +40,7 @@ function createWindow() {
     height: 900,
     minWidth: 1180,
     minHeight: 720,
-    title: 'Tabetei POS',
+    title: 'KhadkaPOS',
     autoHideMenuBar: true,
     backgroundColor: '#f3f1ee',
     webPreferences: {

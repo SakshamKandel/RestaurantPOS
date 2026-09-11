@@ -90,7 +90,7 @@ export default function Sidebar({ view, role, userName, onNavigate, onLogout }: 
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white shadow-md shadow-orange-500/30">
           <Soup size={19} strokeWidth={2.4} />
         </span>
-        <span className="text-[19px] font-extrabold tracking-tight">Tabetei</span>
+        <span className="text-[19px] font-extrabold tracking-tight">Khadka</span>
       </div>
 
       <p className="mb-2 px-2 text-[10px] font-bold tracking-[0.18em] text-neutral-300">

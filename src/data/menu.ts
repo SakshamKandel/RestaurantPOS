@@ -196,12 +196,12 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  restaurantName: 'Tabetei Japanese Kitchen',
-  legalName: 'Tabetei Kitchen LLC',
+  restaurantName: 'Khadka Kitchen',
+  legalName: 'Khadka Kitchen LLC',
   address: '742 Sunset Blvd, Los Angeles, CA 90046',
   phone: '+1 (323) 555-0147',
-  email: 'hello@tabetei.com',
-  website: 'www.tabetei.com',
+  email: 'hello@Khadka.com',
+  website: 'www.Khadka.com',
   taxId: 'EIN 12-3456789',
   receiptFooter: 'Thank you, please come again!',
   taxRate: 0.095, // US sales tax (CA combined rate); editable per state

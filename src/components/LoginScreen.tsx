@@ -78,7 +78,7 @@ export default function LoginScreen({ staff, onLogin }: Props) {
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white">
               <Soup size={20} strokeWidth={2.4} />
             </span>
-            <span className="text-[20px] font-extrabold tracking-tight">Tabetei</span>
+            <span className="text-[20px] font-extrabold tracking-tight">Khadka</span>
           </div>
           <p className="mt-1.5 text-[12px] font-medium text-neutral-400">
             Select your profile to clock in

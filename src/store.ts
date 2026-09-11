@@ -164,7 +164,7 @@ interface PosBridge {
 }
 
 const bridge = (window as unknown as { pos?: PosBridge }).pos
-const LS_KEY = 'tabetei-pos'
+const LS_KEY = 'khadkapos'
 
 export async function loadPersisted(): Promise<PosState | null> {
   try {

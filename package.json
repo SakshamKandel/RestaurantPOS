@@ -1,5 +1,5 @@
 {
-  "name": "tabetei-pos",
+  "name": "khadkapos",
   "private": true,
   "version": "0.2.0",
   "type": "module",
@@ -14,8 +14,8 @@
     "preview": "vite preview"
   },
   "build": {
-    "appId": "com.tabetei.pos",
-    "productName": "Tabetei POS",
+    "appId": "com.Khadka.pos",
+    "productName": "KhadkaPOS",
     "directories": {
       "output": "C:/Users/HELIOS/pos-release"
     },
@@ -40,7 +40,7 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
-      "shortcutName": "Tabetei POS"
+      "shortcutName": "KhadkaPOS"
     }
   },
   "dependencies": {
