@@ -38,7 +38,10 @@ import {
   installUpdate,
   loadPersisted,
   onUpdateAvailable,
+  onUpdateChecking,
   onUpdateDownloaded,
+  onUpdateError,
+  onUpdateNone,
   persist,
   printDocument,
   timeAgo,
@@ -89,12 +92,16 @@ export default function App() {
   const [printers, setPrinters] = useState<DetectedPrinter[]>([])
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [version, setVersion] = useState('')
+  const [lastOrder, setLastOrder] = useState<PlacedOrder | null>(null)
 
   const refreshPrinters = () => detectPrinters().then(setPrinters)
   useEffect(() => {
     refreshPrinters()
     appVersion().then(setVersion)
-    onUpdateAvailable((i) => flash(`Downloading update v${i.version}…`))
+    onUpdateChecking(() => flash('Checking for updates…'))
+    onUpdateAvailable((i) => flash(`Update v${i.version} found — downloading…`))
+    onUpdateNone((i) => flash(`You're on the latest version (v${i.version})`))
+    onUpdateError(() => flash("Couldn't check for updates — offline or GitHub unreachable"))
     onUpdateDownloaded((info) => setUpdate(info))
   }, [])
 
@@ -278,6 +285,20 @@ export default function App() {
   const tax = Math.round((subtotal - discountCents) * state.settings.taxRate)
   const total = subtotal - discountCents + tax
 
+  const notifications = useMemo(() => {
+    const n: { id: string; title: string; sub: string; tone: 'warn' | 'info' }[] = []
+    const failed = state.printJobs.filter((j) => j.status === 'failed').length
+    const pending = state.printJobs.filter((j) => j.status === 'pending').length
+    if (failed) n.push({ id: 'jf', title: `${failed} print job${failed > 1 ? 's' : ''} failed`, sub: 'Open Printers to retry', tone: 'warn' })
+    if (pending) n.push({ id: 'jp', title: `${pending} job${pending > 1 ? 's' : ''} printing`, sub: 'Queued to thermal printers', tone: 'info' })
+    if (user && !state.shifts.some((s) => s.closedAt === null))
+      n.push({ id: 'shift', title: 'No shift open', sub: 'Open a shift to track the cash drawer', tone: 'warn' })
+    state.audit.slice(0, 3).forEach((e) =>
+      n.push({ id: e.id, title: e.action, sub: `${e.detail} · ${e.actor}`, tone: 'info' }),
+    )
+    return n
+  }, [state.printJobs, state.shifts, state.audit, user])
+
   const todaySales = state.orders
     .filter(
       (o) =>
@@ -350,6 +371,7 @@ export default function App() {
         ? [{ id: uid(), orderNumber: order.number, docType: 'DRAWER KICK', role: 'billing', status: 'pending', copy: false, createdAt: Date.now() }]
         : []
     enqueueJobs(order, kick) // kitchen ticket → chef printer, receipt (+drawer kick) → billing printer
+    setLastOrder(order)
     audit('order.completed', `${order.number} · ${method} · ${(total / 100).toFixed(2)}`)
     setCart({})
     setDiscount(null)
@@ -640,6 +662,12 @@ export default function App() {
               held={state.held}
               onRecall={recallHeld}
               todaySales={todaySales}
+              notifications={notifications}
+              onSignOut={() => {
+                audit('auth.logout', `${user.name} signed out`)
+                setUser(null)
+              }}
+              onOpenStaff={() => setView('staff')}
             />
           </main>
           <OrderPanel
@@ -668,6 +696,8 @@ export default function App() {
             onHold={holdOrder}
             onPrint={() => flash('Receipt sent to billing printer')}
             onOrder={() => setPayOpen(true)}
+            hasLastOrder={!!lastOrder}
+            onReprintLast={() => lastOrder && setReceipt(lastOrder)}
             drawerEnabled={state.settings.cashDrawer}
             onOpenDrawer={() => {
               openDrawer('No-sale open from order screen')

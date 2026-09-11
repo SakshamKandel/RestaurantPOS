@@ -162,6 +162,9 @@ interface PosBridge {
   installUpdate?: () => Promise<void>
   onUpdateAvailable?: (cb: (i: { version: string }) => void) => void
   onUpdateDownloaded?: (cb: (i: UpdateInfo) => void) => void
+  onUpdateChecking?: (cb: () => void) => void
+  onUpdateNone?: (cb: (i: { version: string }) => void) => void
+  onUpdateError?: (cb: (i: { message: string }) => void) => void
 }
 
 const bridge = (window as unknown as { pos?: PosBridge }).pos
@@ -216,6 +219,11 @@ export const onUpdateAvailable = (cb: (i: { version: string }) => void) =>
   bridge?.onUpdateAvailable?.(cb)
 export const onUpdateDownloaded = (cb: (i: UpdateInfo) => void) =>
   bridge?.onUpdateDownloaded?.(cb)
+export const onUpdateChecking = (cb: () => void) => bridge?.onUpdateChecking?.(cb)
+export const onUpdateNone = (cb: (i: { version: string }) => void) =>
+  bridge?.onUpdateNone?.(cb)
+export const onUpdateError = (cb: (i: { message: string }) => void) =>
+  bridge?.onUpdateError?.(cb)
 
 /** File picker → copies photo into app data, returns posimg:// URL (or null). */
 export const pickImage = () => bridge?.pickImage?.() ?? Promise.resolve(null)

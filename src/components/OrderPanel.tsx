@@ -71,6 +71,8 @@ interface Props {
   onOrder: () => void
   drawerEnabled: boolean
   onOpenDrawer: () => void
+  hasLastOrder: boolean
+  onReprintLast: () => void
 }
 
 export default function OrderPanel({
@@ -101,11 +103,14 @@ export default function OrderPanel({
   onOrder,
   drawerEnabled,
   onOpenDrawer,
+  hasLastOrder,
+  onReprintLast,
 }: Props) {
   const itemCount = lines.reduce((n, l) => n + l.qty, 0)
   const customer = customers.find((c) => c.id === customerId)
   const [noteLine, setNoteLine] = useState<string | null>(null)
   const [showNote, setShowNote] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [discValue, setDiscValue] = useState('')
   const [discType, setDiscType] = useState<'percent' | 'flat'>('percent')
 
@@ -155,9 +160,34 @@ export default function OrderPanel({
               Order {orderNumber}
             </p>
           </div>
-          <button className="rounded-lg p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700">
-            <MoreHorizontal size={17} />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setMoreOpen(!moreOpen)}
+              className="rounded-lg p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+            >
+              <MoreHorizontal size={17} />
+            </button>
+            {moreOpen && (
+              <div className="absolute right-0 z-30 mt-1 w-48 rounded-2xl border border-neutral-100 bg-white p-2 shadow-xl">
+                <button
+                  onClick={() => { setMoreOpen(false); onReprintLast() }}
+                  disabled={!hasLastOrder}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[12px] font-bold text-neutral-600 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Printer size={14} />
+                  Reprint last receipt
+                </button>
+                <button
+                  onClick={() => { setMoreOpen(false); onClear() }}
+                  disabled={lines.length === 0}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[12px] font-bold text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash2 size={14} />
+                  Clear order
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Order type */}

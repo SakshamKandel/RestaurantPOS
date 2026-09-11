@@ -17,4 +17,9 @@ contextBridge.exposeInMainWorld('pos', {
     ipcRenderer.on('update:available', (_e, info) => cb(info)),
   onUpdateDownloaded: (cb) =>
     ipcRenderer.on('update:downloaded', (_e, info) => cb(info)),
+  onUpdateChecking: (cb) => ipcRenderer.on('update:checking', () => cb()),
+  onUpdateNone: (cb) =>
+    ipcRenderer.on('update:none', (_e, info) => cb(info)),
+  onUpdateError: (cb) =>
+    ipcRenderer.on('update:error', (_e, info) => cb(info)),
 })

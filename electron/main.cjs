@@ -177,7 +177,15 @@ function setupAutoUpdater() {
     if (forced) setTimeout(() => autoUpdater.quitAndInstall(), 4000)
   })
 
-  autoUpdater.on('error', () => {}) // offline or dev mode — silent
+  autoUpdater.on('checking-for-update', () => {
+    mainWindow?.webContents.send('update:checking')
+  })
+  autoUpdater.on('update-not-available', () => {
+    mainWindow?.webContents.send('update:none', { version: app.getVersion() })
+  })
+  autoUpdater.on('error', (err) => {
+    mainWindow?.webContents.send('update:error', { message: String(err?.message ?? err) })
+  })
   autoUpdater.checkForUpdates().catch(() => {})
   setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 3600 * 1000)
 }
