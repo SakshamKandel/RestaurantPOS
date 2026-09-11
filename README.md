@@ -66,3 +66,11 @@ src/
                    Report, Settings, Info
 scripts/electron.mjs  Launcher (strips ELECTRON_RUN_AS_NODE)
 ```
+
+## Updates & Rollback
+
+- The app checks GitHub Releases for updates on launch and every 6h (only when online — sales work offline).
+- When an update downloads, you can **defer it for up to 3 days**; after that it **installs automatically**.
+- Before every install, a safety copy of the store is written to `%APPDATA%\tabetei-pos\backups\pre-update-*.json`.
+- **Rollback**: if a release misbehaves, download an older `Tabetei POS-Setup-x.y.z.exe` from the Releases page and install it. Data lives in `%APPDATA%\tabetei-pos\` (never deleted on uninstall) and the store only ever *adds* fields, so older versions can read newer data.
+- Publishing: bump `version` in package.json ? `npx electron-builder` ? `gh release create vX.Y.Z <setup.exe> <blockmap> <latest.yml>`.
