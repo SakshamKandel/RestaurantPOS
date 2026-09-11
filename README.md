@@ -1,8 +1,9 @@
 # Tabetei POS
 
-Offline-first desktop point-of-sale for a Japanese restaurant.
+Offline-first desktop point-of-sale for a **US takeaway restaurant**.
 **React 19 + TypeScript + Vite + Tailwind CSS 4** UI inside an **Electron**
-shell, with a durable JSON store behind IPC (`%APPDATA%/tabetei-pos/pos-store.json`).
+shell, with a durable JSON store behind IPC
+(`%APPDATA%/tabetei-pos/pos-store.json`).
 
 ## Run it
 
@@ -25,31 +26,43 @@ Reports and Settings are manager-only; Log Out returns to the PIN screen.
 
 ## Features
 
-- **Dashboard** — menu grid, category/search filters, live order-line strip,
-  order types (take away / dine in / delivery), table picker, customer attach,
-  hold & recall parked orders
+- **Dashboard** — menu grid, category/search filters, live order-line strip
+  (Waiting → Ready → Served), order types: Take Away / Collection / Delivery,
+  customer attach, hold & recall parked orders
 - **Payment** — cash numpad with quick-tender and change, QR/scan, card;
-  thermal-style receipt preview; kitchen + billing jobs simulated
-- **Kitchen** — KDS kanban: New → Preparing → Ready → Served
-- **Reservations** — floor plan with free/reserved/occupied tables, booking form
+  thermal-style receipt preview
+- **Dual thermal printers** — on every completed order a **kitchen ticket**
+  (items + order details) prints on the chef printer and a **receipt** prints
+  on the billing printer. Jobs are durable, queued, and retryable from the
+  Printers page — a printer failure never cancels a paid sale
+- **Printers** — print-queue monitor with job status, kitchen-ticket preview,
+  COPY reprints, and retry
 - **Customers** — searchable CRM, add profiles, start an order for a customer
-- **Transactions** — order history, reprint (COPY), refund
+- **Transactions** — order history, advance status, reprint (COPY), refund
 - **Report** — gross/avg/tax/refunds, sales-by-hour chart, tender split, top items
-- **Settings** — restaurant identity, tax rate, order prefix, printer roles
-- **Info** — health panel (DB, printers, connectivity) + one-click backup
+- **Settings** — restaurant identity, US sales tax rate, order prefix,
+  printer roles
+- **Info** — health panel (DB, printers, connectivity) + manual backup
+
+## Data safety
+
+- Money is always integer cents — no floating-point currency.
+- Every state change is persisted atomically **and** writes a timestamped
+  backup to `%APPDATA%/tabetei-pos/backups/` (last 10 kept automatically).
+- Print jobs persist across restarts; a job left mid-flight on shutdown is
+  marked `failed` on next launch so it can be retried — never re-printed
+  silently.
 
 ## Layout
 
 ```
 electron/          Desktop shell (main process, preload IPC bridge)
 src/
-  data/menu.ts     Catalog, staff, customers, reservations, settings seeds
+  data/menu.ts     Catalog, staff, customers, settings seeds
   store.ts         Persisted state shape + IPC/localStorage persistence
   components/      Sidebar, OrderPanel, OrderLine, MenuSection,
                    LoginScreen, PaymentModal, ReceiptModal
-  pages/           Dashboard, Kitchen, Reservations, Customers,
-                   Transactions, Report, Settings, Info
+  pages/           Dashboard, Printers, Customers, Transactions,
+                   Report, Settings, Info
 scripts/electron.mjs  Launcher (strips ELECTRON_RUN_AS_NODE)
 ```
-
-Money is always integer cents — no floating-point currency, per the PRD.
