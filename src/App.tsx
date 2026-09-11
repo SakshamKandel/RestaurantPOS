@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { BadgePercent } from 'lucide-react'
 import { CheckCircle2 } from 'lucide-react'
 import Sidebar, { type View } from './components/Sidebar'
 import OrderPanel, {
@@ -29,10 +30,15 @@ import {
   type Staff,
 } from './data/menu'
 import {
+  appVersion,
   backupNow,
+  checkForUpdates,
   detectPrinters,
   initialState,
+  installUpdate,
   loadPersisted,
+  onUpdateAvailable,
+  onUpdateDownloaded,
   persist,
   printDocument,
   timeAgo,
@@ -47,6 +53,7 @@ import {
   type PrintJob,
   type PrinterRole,
   type Shift,
+  type UpdateInfo,
 } from './store'
 import { kickHtml, kitchenHtml, receiptHtml, testHtml } from './print/docs'
 import type { DisplayOrder } from './components/OrderLine'
@@ -83,10 +90,15 @@ export default function App() {
   const [receipt, setReceipt] = useState<PlacedOrder | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [printers, setPrinters] = useState<DetectedPrinter[]>([])
+  const [update, setUpdate] = useState<UpdateInfo | null>(null)
+  const [version, setVersion] = useState('')
 
   const refreshPrinters = () => detectPrinters().then(setPrinters)
   useEffect(() => {
     refreshPrinters()
+    appVersion().then(setVersion)
+    onUpdateAvailable((i) => flash(`Downloading update v${i.version}…`))
+    onUpdateDownloaded((info) => setUpdate(info))
   }, [])
 
   // Load persisted state once
@@ -705,6 +717,10 @@ export default function App() {
           orderCount={state.orders.length}
           audit={state.audit}
           printers={printers}
+          version={version}
+          onCheckUpdates={() =>
+            checkForUpdates().then(() => flash('Checking for updates…'))
+          }
           onBackup={() =>
             backupNow(state).then((f) => {
               audit('backup.created', f ?? 'unknown location')
@@ -732,6 +748,43 @@ export default function App() {
           }}
           onClose={() => setReceipt(null)}
         />
+      )}
+
+      {/* Update modal — deferrable for 3 days, then forced */}
+      {update && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-[400px] rounded-3xl bg-white p-7 text-center shadow-2xl">
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
+              <BadgePercent size={26} />
+            </span>
+            <p className="mt-4 text-[17px] font-extrabold">
+              Update v{update.version} is ready
+            </p>
+            <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-neutral-400">
+              {update.forced
+                ? 'The deferral window has ended — the update installs automatically. Your data was backed up first.'
+                : `Restart now to update, or keep working — this update installs automatically after ${new Date(update.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' })}.`}
+            </p>
+            <div className="mt-5 flex gap-2.5">
+              {!update.forced && (
+                <button
+                  onClick={() => setUpdate(null)}
+                  className="flex-1 rounded-xl border border-neutral-200 py-3 text-[13px] font-bold text-neutral-600 hover:bg-neutral-50"
+                >
+                  Later
+                </button>
+              )}
+              <button
+                onClick={() => installUpdate()}
+                className={`flex-1 rounded-xl py-3 text-[13px] font-extrabold text-white ${
+                  update.forced ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary-dark'
+                }`}
+              >
+                {update.forced ? 'Installing…' : 'Restart & Update'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (

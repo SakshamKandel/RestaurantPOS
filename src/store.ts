@@ -143,12 +143,24 @@ export interface PrintResult {
   reason: string | null
 }
 
+export interface UpdateInfo {
+  version: string
+  currentVersion: string
+  forced: boolean
+  deadline: number
+}
+
 interface PosBridge {
   loadStore: () => Promise<PosState | null>
   saveStore: (s: PosState) => Promise<boolean>
   backup: (s: PosState) => Promise<string>
   listPrinters?: () => Promise<DetectedPrinter[]>
   printDoc?: (p: { deviceName: string; html: string; paperWidthMm: number }) => Promise<PrintResult>
+  appVersion?: () => Promise<string>
+  checkUpdates?: () => Promise<unknown>
+  installUpdate?: () => Promise<void>
+  onUpdateAvailable?: (cb: (i: { version: string }) => void) => void
+  onUpdateDownloaded?: (cb: (i: UpdateInfo) => void) => void
 }
 
 const bridge = (window as unknown as { pos?: PosBridge }).pos
@@ -195,6 +207,14 @@ export function printDocument(
   if (!bridge?.printDoc) return null
   return bridge.printDoc({ deviceName, html, paperWidthMm })
 }
+
+export const appVersion = () => bridge?.appVersion?.() ?? Promise.resolve('dev')
+export const checkForUpdates = () => bridge?.checkUpdates?.() ?? Promise.resolve(null)
+export const installUpdate = () => bridge?.installUpdate?.()
+export const onUpdateAvailable = (cb: (i: { version: string }) => void) =>
+  bridge?.onUpdateAvailable?.(cb)
+export const onUpdateDownloaded = (cb: (i: UpdateInfo) => void) =>
+  bridge?.onUpdateDownloaded?.(cb)
 
 export function timeAgo(ts: number): string {
   const m = Math.max(0, Math.round((Date.now() - ts) / 60000))

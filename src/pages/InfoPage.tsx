@@ -7,10 +7,12 @@ interface Props {
   orderCount: number
   audit: AuditEvent[]
   printers: DetectedPrinter[]
+  version: string
+  onCheckUpdates: () => void
   onBackup: () => void
 }
 
-export default function InfoPage({ settings, orderCount, audit, printers, onBackup }: Props) {
+export default function InfoPage({ settings, orderCount, audit, printers, version, onCheckUpdates, onBackup }: Props) {
   const detected = (name: string) => printers.some((p) => p.name === name)
   const health = [
     { label: 'Local database', detail: `${orderCount} orders · auto-backup on every change`, ok: true, icon: HardDrive },
@@ -37,7 +39,9 @@ export default function InfoPage({ settings, orderCount, audit, printers, onBack
             </span>
             <div>
               <p className="text-[17px] font-extrabold">Tabetei POS</p>
-              <p className="text-[11.5px] font-medium text-neutral-400">Version 0.1.0 · Register 01</p>
+              <p className="text-[11.5px] font-medium text-neutral-400">
+                Version {version || '…'} · Register 01
+              </p>
             </div>
           </div>
           <div className="mt-5 flex flex-col gap-2.5 text-[12.5px]">
@@ -100,13 +104,25 @@ export default function InfoPage({ settings, orderCount, audit, printers, onBack
             })}
           </ul>
 
-          <button
-            onClick={onBackup}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 py-3 text-[12.5px] font-bold text-white hover:bg-neutral-700"
-          >
-            <DatabaseBackup size={15} />
-            Create Backup Now
-          </button>
+          <div className="mt-5 flex gap-2.5">
+            <button
+              onClick={onBackup}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-neutral-900 py-3 text-[12.5px] font-bold text-white hover:bg-neutral-700"
+            >
+              <DatabaseBackup size={15} />
+              Backup Now
+            </button>
+            <button
+              onClick={onCheckUpdates}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-200 py-3 text-[12.5px] font-bold text-neutral-600 hover:border-primary hover:text-primary"
+            >
+              Check for Updates
+            </button>
+          </div>
+          <p className="mt-3 text-center text-[10.5px] font-medium leading-relaxed text-neutral-400">
+            Broken update? Download any previous version from GitHub Releases and install it —
+            your data lives in %APPDATA% and stays compatible across versions.
+          </p>
         </section>
       </div>
 
