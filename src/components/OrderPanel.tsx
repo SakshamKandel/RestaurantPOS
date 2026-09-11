@@ -1,8 +1,13 @@
+import { useEffect, useState } from 'react'
 import {
   Banknote,
   CreditCard,
+  Minus,
   MoreHorizontal,
+  StickyNote,
   Pause,
+  Percent,
+  Plus,
   Printer,
   ScanLine,
   ShoppingBag,
@@ -16,7 +21,7 @@ import {
   type Customer,
   type MenuItem,
 } from '../data/menu'
-import type { OrderType } from '../store'
+import type { Discount, OrderType } from '../store'
 
 export type PaymentMethod = 'cash' | 'scan' | 'credit'
 
@@ -35,12 +40,14 @@ const ORDER_TYPES: { id: OrderType; label: string }[] = [
 export interface CartLine {
   item: MenuItem
   qty: number
+  note?: string
 }
 
 interface Props {
   orderNumber: string
   lines: CartLine[]
   subtotal: Cents
+  discount: Cents
   tax: Cents
   total: Cents
   paymentMethod: PaymentMethod
@@ -48,10 +55,17 @@ interface Props {
   customerId: string
   customers: Customer[]
   heldCount: number
+  discountInput: Discount
+  orderNote: string
   onPaymentChange: (m: PaymentMethod) => void
   onTypeChange: (t: OrderType) => void
   onCustomerChange: (id: string) => void
+  onLineQty: (id: string, delta: number) => void
+  onLineNote: (id: string, note: string) => void
   onRemoveLine: (id: string) => void
+  onClear: () => void
+  onDiscountChange: (d: Discount) => void
+  onOrderNote: (n: string) => void
   onHold: () => void
   onPrint: () => void
   onOrder: () => void
@@ -63,6 +77,7 @@ export default function OrderPanel({
   orderNumber,
   lines,
   subtotal,
+  discount,
   tax,
   total,
   paymentMethod,
@@ -70,10 +85,17 @@ export default function OrderPanel({
   customerId,
   customers,
   heldCount,
+  discountInput,
+  orderNote,
   onPaymentChange,
   onTypeChange,
   onCustomerChange,
+  onLineQty,
+  onLineNote,
   onRemoveLine,
+  onClear,
+  onDiscountChange,
+  onOrderNote,
   onHold,
   onPrint,
   onOrder,
@@ -82,6 +104,29 @@ export default function OrderPanel({
 }: Props) {
   const itemCount = lines.reduce((n, l) => n + l.qty, 0)
   const customer = customers.find((c) => c.id === customerId)
+  const [noteLine, setNoteLine] = useState<string | null>(null)
+  const [showNote, setShowNote] = useState(false)
+  const [discValue, setDiscValue] = useState('')
+  const [discType, setDiscType] = useState<'percent' | 'flat'>('percent')
+
+  useEffect(() => {
+    if (!discountInput) {
+      setDiscValue('')
+    } else {
+      setDiscType(discountInput.type)
+      setDiscValue(
+        discountInput.type === 'percent'
+          ? String(discountInput.value)
+          : (discountInput.value / 100).toFixed(2),
+      )
+    }
+  }, [discountInput])
+
+  const applyDiscount = () => {
+    const v = parseFloat(discValue)
+    if (Number.isNaN(v) || v <= 0) return onDiscountChange(null)
+    onDiscountChange({ type: discType, value: discType === 'percent' ? v : Math.round(v * 100) })
+  }
 
   return (
     <aside className="flex w-[300px] shrink-0 flex-col border-l border-neutral-200/70 bg-white">
@@ -137,9 +182,19 @@ export default function OrderPanel({
       <div className="thin-scroll flex-1 overflow-y-auto px-5">
         <div className="mt-4 flex items-center justify-between">
           <p className="text-[13px] font-extrabold">Ordered Items</p>
-          <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-neutral-100 px-1.5 text-[10.5px] font-bold text-neutral-500">
-            {itemCount}
-          </span>
+          <div className="flex items-center gap-2">
+            {lines.length > 0 && (
+              <button
+                onClick={onClear}
+                className="text-[10.5px] font-bold text-neutral-400 hover:text-red-500"
+              >
+                Clear
+              </button>
+            )}
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-neutral-100 px-1.5 text-[10.5px] font-bold text-neutral-500">
+              {itemCount}
+            </span>
+          </div>
         </div>
 
         {lines.length === 0 ? (
@@ -151,35 +206,111 @@ export default function OrderPanel({
           </div>
         ) : (
           <ul className="mt-3 flex flex-col divide-y divide-neutral-100">
-            {lines.map(({ item, qty }) => (
-              <li key={item.id} className="group flex items-center gap-2 py-2.5">
-                <span className="w-7 text-[11.5px] font-bold text-neutral-400">
-                  {qty}x
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-neutral-700">
-                  {item.name}
-                </span>
-                <button
-                  onClick={() => onRemoveLine(item.id)}
-                  className="rounded-md p-1 text-neutral-300 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-50 hover:text-red-500"
-                  aria-label={`Remove ${item.name}`}
-                >
-                  <Trash2 size={13} />
-                </button>
-                <span className="w-14 text-right text-[12.5px] font-extrabold">
-                  {formatMoney(item.price * qty)}
-                </span>
+            {lines.map(({ item, qty, note }) => (
+              <li key={item.id} className="py-2.5">
+                <div className="group flex items-center gap-2">
+                  <span className="flex items-center rounded-lg bg-neutral-100">
+                    <button
+                      onClick={() => onLineQty(item.id, -1)}
+                      className="flex h-6 w-6 items-center justify-center text-neutral-500 hover:text-primary"
+                    >
+                      <Minus size={11} strokeWidth={3} />
+                    </button>
+                    <span className="w-5 text-center text-[11.5px] font-bold">{qty}</span>
+                    <button
+                      onClick={() => onLineQty(item.id, 1)}
+                      className="flex h-6 w-6 items-center justify-center text-neutral-500 hover:text-primary"
+                    >
+                      <Plus size={11} strokeWidth={3} />
+                    </button>
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-neutral-700">
+                    {item.name}
+                  </span>
+                  <button
+                    onClick={() => setNoteLine(noteLine === item.id ? null : item.id)}
+                    title="Add note (e.g. no onions)"
+                    className={`rounded-md p-1 transition-colors ${note || noteLine === item.id ? 'text-primary' : 'text-neutral-300 hover:text-primary'}`}
+                  >
+                    <StickyNote size={13} />
+                  </button>
+                  <button
+                    onClick={() => onRemoveLine(item.id)}
+                    className="rounded-md p-1 text-neutral-300 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-50 hover:text-red-500"
+                    aria-label={`Remove ${item.name}`}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                  <span className="w-14 text-right text-[12.5px] font-extrabold">
+                    {formatMoney(item.price * qty)}
+                  </span>
+                </div>
+                {(noteLine === item.id || note) && (
+                  <input
+                    autoFocus={noteLine === item.id}
+                    value={note ?? ''}
+                    onChange={(e) => onLineNote(item.id, e.target.value)}
+                    onBlur={() => setNoteLine(null)}
+                    placeholder="Note for kitchen (e.g. no onions)"
+                    className="mt-1.5 w-full rounded-lg border border-dashed border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-[11px] font-medium italic text-neutral-600 outline-none focus:border-primary"
+                  />
+                )}
               </li>
             ))}
           </ul>
         )}
 
+        {/* Order note */}
+        <button
+          onClick={() => setShowNote(!showNote)}
+          className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-neutral-400 hover:text-primary"
+        >
+          <StickyNote size={12} />
+          {orderNote || showNote ? 'Order note for kitchen' : 'Add order note'}
+        </button>
+        {showNote && (
+          <input
+            autoFocus
+            value={orderNote}
+            onChange={(e) => onOrderNote(e.target.value)}
+            placeholder="e.g. pack sauces separately"
+            className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2 text-[11.5px] font-medium outline-none focus:border-primary"
+          />
+        )}
+
         {/* Payment summary */}
-        <p className="mt-5 text-[13px] font-extrabold">Payment Summary</p>
+        <p className="mt-4 text-[13px] font-extrabold">Payment Summary</p>
         <div className="mt-2.5 flex flex-col gap-1.5 text-[12px]">
           <div className="flex justify-between text-neutral-500">
             <span>Subtotal</span>
             <span className="font-bold text-neutral-800">{formatMoney(subtotal)}</span>
+          </div>
+          <div className="flex items-center justify-between text-neutral-500">
+            <span className="flex items-center gap-1.5">
+              Discount
+              <Percent size={11} className="text-neutral-300" />
+            </span>
+            <span className="flex items-center gap-1.5">
+              <select
+                value={discType}
+                onChange={(e) => setDiscType(e.target.value as 'percent' | 'flat')}
+                className="cursor-pointer rounded-md border border-neutral-200 bg-white px-1 py-0.5 text-[10.5px] font-bold outline-none"
+              >
+                <option value="percent">%</option>
+                <option value="flat">$</option>
+              </select>
+              <input
+                value={discValue}
+                onChange={(e) => setDiscValue(e.target.value)}
+                onBlur={applyDiscount}
+                onKeyDown={(e) => e.key === 'Enter' && applyDiscount()}
+                placeholder="0"
+                className="w-14 rounded-md border border-neutral-200 px-1.5 py-0.5 text-right text-[11px] font-bold outline-none focus:border-primary"
+              />
+              <span className="w-12 text-right font-bold text-red-500">
+                {discount > 0 ? `-${formatMoney(discount)}` : '—'}
+              </span>
+            </span>
           </div>
           <div className="flex justify-between text-neutral-500">
             <span>Tax</span>

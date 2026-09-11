@@ -19,6 +19,7 @@ interface Props {
 
 export default function TransactionsPage({ orders, onRefund, onReprint, onAdvance }: Props) {
   const [query, setQuery] = useState('')
+  const [confirmRefund, setConfirmRefund] = useState<string | null>(null)
   const q = query.trim().toLowerCase()
   const visible = orders
     .filter(
@@ -105,14 +106,24 @@ export default function TransactionsPage({ orders, onRefund, onReprint, onAdvanc
                     >
                       <Printer size={13} />
                     </button>
-                    <button
-                      onClick={() => onRefund(o.id)}
-                      disabled={o.status === 'refunded'}
-                      title="Refund order"
-                      className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-red-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
-                    >
-                      <RotateCcw size={13} />
-                    </button>
+                    {confirmRefund === o.id ? (
+                      <button
+                        onClick={() => { onRefund(o.id); setConfirmRefund(null) }}
+                        onMouseLeave={() => setConfirmRefund(null)}
+                        className="rounded-lg bg-red-500 px-2.5 py-1.5 text-[10.5px] font-bold text-white"
+                      >
+                        Sure?
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmRefund(o.id)}
+                        disabled={o.status === 'refunded'}
+                        title="Refund order"
+                        className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-red-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <RotateCcw size={13} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

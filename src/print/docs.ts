@@ -27,9 +27,10 @@ ${copy ? '<p class="c b">*** COPY ***</p>' : ''}
 <div class="row"><span>${o.type.replace('-', ' ').toUpperCase()}</span><span>${esc(o.cashier)}</span></div>
 <div class="row"><span>Customer</span><span>${esc(o.customer)}</span></div>
 <hr>
-${o.lines.map((l) => `<div class="row"><span>${l.qty}x ${esc(l.name)}</span><span>${formatMoney(l.qty * l.price)}</span></div>`).join('')}
+${o.lines.map((l) => `<div class="row"><span>${l.qty}x ${esc(l.name)}</span><span>${formatMoney(l.qty * l.price)}</span></div>${l.note ? `<div style="padding-left:4mm;font-style:italic">— ${esc(l.note)}</div>` : ''}`).join('')}
 <hr>
 <div class="row"><span>Subtotal</span><span>${formatMoney(o.subtotal)}</span></div>
+${o.discount ? `<div class="row"><span>Discount</span><span>-${formatMoney(o.discount)}</span></div>` : ''}
 <div class="row"><span>Sales tax ${(s.taxRate * 100).toFixed(2)}%</span><span>${formatMoney(o.tax)}</span></div>
 <div class="row big"><span>TOTAL</span><span>${formatMoney(o.total)}</span></div>
 <div class="row"><span>${o.payment.toUpperCase()}</span><span>${formatMoney(o.tendered)}</span></div>
@@ -49,7 +50,8 @@ export function kitchenHtml(o: PlacedOrder, s: Settings): string {
 <div class="row"><span class="b">Order ${o.number}</span><span>${new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
 <div class="row"><span class="b">${o.type.replace('-', ' ').toUpperCase()}</span><span>${esc(o.customer)}</span></div>
 <hr>
-${o.lines.map((l) => `<div class="row b"><span>${l.qty}x ${esc(l.name)}</span></div>`).join('')}
+${o.lines.map((l) => `<div class="row b"><span>${l.qty}x ${esc(l.name)}</span></div>${l.note ? `<div style="padding-left:4mm;font-style:italic">— ${esc(l.note)}</div>` : ''}`).join('')}
+${o.note ? `<hr><p class="b">NOTE: ${esc(o.note)}</p>` : ''}
 <hr>
 <p class="c">Cashier: ${esc(o.cashier)}</p>`,
   )

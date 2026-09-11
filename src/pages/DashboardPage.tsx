@@ -1,8 +1,9 @@
 import { Bell, ChevronDown, History, Search, TrendingUp } from 'lucide-react'
 import OrderLine, { type DisplayOrder } from '../components/OrderLine'
-import MenuSection from '../components/MenuSection'
+import MenuSection, { type CartMap } from '../components/MenuSection'
 import {
   formatMoney,
+  type Category,
   type CategoryId,
   type Cents,
   type MenuItem,
@@ -14,9 +15,10 @@ import type { HeldOrder } from '../store'
 interface Props {
   user: Staff
   items: MenuItem[]
+  categories: Category[]
   category: CategoryId
   onCategory: (c: CategoryId) => void
-  cart: Record<string, number>
+  cart: CartMap
   onAdd: (id: string) => void
   onIncrement: (id: string) => void
   onDecrement: (id: string) => void
@@ -34,6 +36,7 @@ interface Props {
 export default function DashboardPage({
   user,
   items,
+  categories,
   category,
   onCategory,
   cart,
@@ -117,6 +120,7 @@ export default function DashboardPage({
 
       <MenuSection
         items={items}
+        categories={categories}
         activeCategory={category}
         onCategoryChange={onCategory}
         cart={cart}

@@ -1,8 +1,10 @@
 import {
   DEFAULT_SETTINGS,
   MENU_ITEMS,
+  SEED_CATEGORIES,
   SEED_CUSTOMERS,
   STAFF,
+  type Category,
   type Cents,
   type Customer,
   type MenuItem,
@@ -17,7 +19,10 @@ export interface OrderLineSnap {
   name: string
   qty: number
   price: Cents
+  note?: string
 }
+
+export type Discount = { type: 'percent' | 'flat'; value: number } | null
 
 export type PlacedStatus = 'new' | 'ready' | 'served' | 'refunded'
 
@@ -28,8 +33,10 @@ export interface PlacedOrder {
   customer: string
   lines: OrderLineSnap[]
   subtotal: Cents
+  discount: Cents
   tax: Cents
   total: Cents
+  note?: string
   payment: PaymentMethod
   tendered: Cents
   change: Cents
@@ -43,7 +50,7 @@ export interface HeldOrder {
   label: string
   type: OrderType
   customer: string
-  lines: { itemId: string; qty: number }[]
+  lines: { itemId: string; qty: number; note?: string }[]
   createdAt: number
 }
 
@@ -100,6 +107,7 @@ export interface PosState {
   customers: Customer[]
   printJobs: PrintJob[]
   menu: MenuItem[]
+  categories: Category[]
   settings: Settings
   seq: number
   shifts: Shift[]
@@ -113,6 +121,7 @@ export const initialState: PosState = {
   customers: SEED_CUSTOMERS,
   printJobs: [],
   menu: MENU_ITEMS,
+  categories: SEED_CATEGORIES,
   settings: DEFAULT_SETTINGS,
   seq: 935,
   shifts: [],

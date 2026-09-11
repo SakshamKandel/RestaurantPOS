@@ -1,4 +1,18 @@
-import { CupSoda, Fish, Soup, UtensilsCrossed, type LucideIcon } from 'lucide-react'
+import {
+  CakeSlice,
+  Coffee,
+  CupSoda,
+  Drumstick,
+  Fish,
+  IceCreamBowl,
+  Leaf,
+  Pizza,
+  Salad,
+  Sandwich,
+  Soup,
+  UtensilsCrossed,
+  type LucideIcon,
+} from 'lucide-react'
 
 /** Money is always integer minor units (cents) — never floats. */
 export type Cents = number
@@ -12,19 +26,41 @@ export function formatMoney(cents: Cents): string {
   }).format(cents / 100)
 }
 
-export type CategoryId = 'soup' | 'ramen' | 'sushi' | 'beverages'
+export type CategoryId = string
+
+/** Named icons so categories stay serializable in the persisted store. */
+export type IconName =
+  | 'soup' | 'ramen' | 'sushi' | 'beverages' | 'salad' | 'dessert'
+  | 'coffee' | 'pizza' | 'sandwich' | 'drumstick' | 'leaf' | 'cake'
+
+export const ICONS: Record<IconName, LucideIcon> = {
+  soup: Soup,
+  ramen: UtensilsCrossed,
+  sushi: Fish,
+  beverages: CupSoda,
+  salad: Salad,
+  dessert: IceCreamBowl,
+  coffee: Coffee,
+  pizza: Pizza,
+  sandwich: Sandwich,
+  drumstick: Drumstick,
+  leaf: Leaf,
+  cake: CakeSlice,
+}
+
+export const ICON_NAMES = Object.keys(ICONS) as IconName[]
 
 export interface Category {
   id: CategoryId
   label: string
-  icon: LucideIcon
+  icon: IconName
 }
 
-export const CATEGORIES: Category[] = [
-  { id: 'soup', label: 'Soup', icon: Soup },
-  { id: 'ramen', label: 'Ramen', icon: UtensilsCrossed },
-  { id: 'sushi', label: 'Sushi', icon: Fish },
-  { id: 'beverages', label: 'Beverages', icon: CupSoda },
+export const SEED_CATEGORIES: Category[] = [
+  { id: 'soup', label: 'Soup', icon: 'soup' },
+  { id: 'ramen', label: 'Ramen', icon: 'ramen' },
+  { id: 'sushi', label: 'Sushi', icon: 'sushi' },
+  { id: 'beverages', label: 'Beverages', icon: 'beverages' },
 ]
 
 export interface MenuItem {

@@ -35,11 +35,16 @@ export default function ReceiptModal({ order, settings, onPrint, onClose }: Prop
           </div>
           <div className="my-3 border-t border-dashed border-neutral-300" />
           {order.lines.map((l, i) => (
-            <div key={i} className="flex justify-between">
-              <span>
-                {l.qty}x {l.name}
-              </span>
-              <span>{formatMoney(l.qty * l.price)}</span>
+            <div key={i}>
+              <div className="flex justify-between">
+                <span>
+                  {l.qty}x {l.name}
+                </span>
+                <span>{formatMoney(l.qty * l.price)}</span>
+              </div>
+              {l.note && (
+                <p className="pl-3 italic text-neutral-500">— {l.note}</p>
+              )}
             </div>
           ))}
           <div className="my-3 border-t border-dashed border-neutral-300" />
@@ -47,6 +52,12 @@ export default function ReceiptModal({ order, settings, onPrint, onClose }: Prop
             <span>Subtotal</span>
             <span>{formatMoney(order.subtotal)}</span>
           </div>
+          {order.discount > 0 && (
+            <div className="flex justify-between">
+              <span>Discount</span>
+              <span>-{formatMoney(order.discount)}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span>Tax</span>
             <span>{formatMoney(order.tax)}</span>

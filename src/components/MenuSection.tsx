@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import {
-  CATEGORIES,
   formatMoney,
+  ICONS,
+  type Category,
   type CategoryId,
   type MenuItem,
 } from '../data/menu'
+
+export type CartMap = Record<string, { qty: number; note?: string }>
 
 function DishImage({ item }: { item: MenuItem }) {
   const [failed, setFailed] = useState(false)
@@ -44,9 +47,10 @@ function DishImage({ item }: { item: MenuItem }) {
 
 interface Props {
   items: MenuItem[]
+  categories: Category[]
   activeCategory: CategoryId
   onCategoryChange: (c: CategoryId) => void
-  cart: Record<string, number>
+  cart: CartMap
   onAdd: (id: string) => void
   onIncrement: (id: string) => void
   onDecrement: (id: string) => void
@@ -54,6 +58,7 @@ interface Props {
 
 export default function MenuSection({
   items,
+  categories,
   activeCategory,
   onCategoryChange,
   cart,
@@ -66,8 +71,8 @@ export default function MenuSection({
       <h2 className="text-[16px] font-extrabold tracking-tight">Menu</h2>
 
       <div className="no-scrollbar mt-3 flex gap-2.5 overflow-x-auto pb-1">
-        {CATEGORIES.map((c) => {
-          const Icon = c.icon
+        {categories.map((c) => {
+          const Icon = ICONS[c.icon] ?? ICONS.soup
           const isActive = c.id === activeCategory
           return (
             <button
@@ -107,7 +112,7 @@ export default function MenuSection({
 
       <div className="mt-4 grid grid-cols-2 gap-4 xl:grid-cols-3">
         {items.map((item) => {
-          const qty = cart[item.id] ?? 0
+          const qty = cart[item.id]?.qty ?? 0
           return (
             <article
               key={item.id}
@@ -159,6 +164,11 @@ export default function MenuSection({
           )
         })}
       </div>
+      {items.length === 0 && (
+        <p className="py-12 text-center text-[12px] font-semibold text-neutral-400">
+          No items here — add them from Menu Management
+        </p>
+      )}
     </section>
   )
 }

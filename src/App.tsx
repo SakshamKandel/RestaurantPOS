@@ -20,6 +20,7 @@ import InfoPage from './pages/InfoPage'
 import StaffPage from './pages/StaffPage'
 import {
   LINE_ORDERS,
+  type Category,
   type CategoryId,
   type Customer,
   type MenuItem,
@@ -36,6 +37,7 @@ import {
   printDocument,
   timeAgo,
   type DetectedPrinter,
+  type Discount,
   type DocType,
   type HeldOrder,
   type MovementType,
@@ -48,6 +50,7 @@ import {
 } from './store'
 import { kickHtml, kitchenHtml, receiptHtml, testHtml } from './print/docs'
 import type { DisplayOrder } from './components/OrderLine'
+import type { CartMap } from './components/MenuSection'
 
 const uid = () => Math.random().toString(36).slice(2, 10)
 
@@ -64,10 +67,12 @@ export default function App() {
   const [loaded, setLoaded] = useState(false)
 
   // Current draft order
-  const [cart, setCart] = useState<Record<string, number>>({
-    'tuna-nigiri': 1,
-    'matcha-latte': 1,
+  const [cart, setCart] = useState<CartMap>({
+    'tuna-nigiri': { qty: 1 },
+    'matcha-latte': { qty: 1 },
   })
+  const [discount, setDiscount] = useState<Discount>(null)
+  const [orderNote, setOrderNote] = useState('')
   const [orderType, setOrderType] = useState<OrderType>('take-away')
   const [customerId, setCustomerId] = useState('c5')
   const [category, setCategory] = useState<CategoryId>('sushi')
@@ -219,34 +224,50 @@ export default function App() {
   }
 
   // ---------- Cart ----------
-  const add = (id: string) => setCart((c) => ({ ...c, [id]: 1 }))
-  const increment = (id: string) => setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }))
+  const add = (id: string) => setCart((c) => ({ ...c, [id]: { qty: 1 } }))
+  const increment = (id: string) =>
+    setCart((c) => ({ ...c, [id]: { ...c[id], qty: (c[id]?.qty ?? 0) + 1 } }))
   const decrement = (id: string) =>
     setCart((c) => {
       const next = { ...c }
-      const q = (next[id] ?? 0) - 1
+      const q = (next[id]?.qty ?? 0) - 1
       if (q <= 0) delete next[id]
-      else next[id] = q
+      else next[id] = { ...next[id], qty: q }
       return next
     })
+  const lineQty = (id: string, delta: number) =>
+    delta > 0 ? increment(id) : decrement(id)
+  const setLineNote = (id: string, note: string) =>
+    setCart((c) => (c[id] ? { ...c, [id]: { ...c[id], note: note || undefined } } : c))
   const removeLine = (id: string) =>
     setCart((c) => {
       const next = { ...c }
       delete next[id]
       return next
     })
+  const clearCart = () => {
+    setCart({})
+    setDiscount(null)
+    setOrderNote('')
+  }
 
   const lines: CartLine[] = useMemo(
     () =>
       state.menu.filter((m) => cart[m.id]).map((m) => ({
         item: m,
-        qty: cart[m.id],
+        qty: cart[m.id].qty,
+        note: cart[m.id].note,
       })),
     [cart, state.menu],
   )
   const subtotal = lines.reduce((s, l) => s + l.item.price * l.qty, 0)
-  const tax = Math.round(subtotal * state.settings.taxRate)
-  const total = subtotal + tax
+  const discountCents = !discount
+    ? 0
+    : discount.type === 'percent'
+      ? Math.round((subtotal * Math.min(discount.value, 100)) / 100)
+      : Math.min(Math.round(discount.value), subtotal)
+  const tax = Math.round((subtotal - discountCents) * state.settings.taxRate)
+  const total = subtotal - discountCents + tax
 
   const todaySales = state.orders
     .filter(
@@ -284,10 +305,12 @@ export default function App() {
       number: `#${state.settings.orderPrefix}${state.seq}`,
       type: orderType,
       customer: customer?.name ?? 'Walk-in',
-      lines: lines.map((l) => ({ name: l.item.name, qty: l.qty, price: l.item.price })),
+      lines: lines.map((l) => ({ name: l.item.name, qty: l.qty, price: l.item.price, note: l.note })),
       subtotal,
+      discount: discountCents,
       tax,
       total,
+      note: orderNote || undefined,
       payment: method,
       tendered,
       change,
@@ -295,7 +318,16 @@ export default function App() {
       createdAt: Date.now(),
       cashier: user?.name ?? 'Unknown',
     }
-    setState((s) => ({ ...s, orders: [order, ...s.orders], seq: s.seq + 1 }))
+    setState((s) => ({
+      ...s,
+      orders: [order, ...s.orders],
+      seq: s.seq + 1,
+      customers: s.customers.map((c) =>
+        c.id === customerId
+          ? { ...c, visits: c.visits + 1, spent: c.spent + total }
+          : c,
+      ),
+    }))
     const kick: PrintJob[] =
       method === 'cash' && state.settings.drawerOnCash && state.settings.cashDrawer
         ? [{ id: uid(), orderNumber: order.number, docType: 'DRAWER KICK', role: 'billing', status: 'pending', copy: false, createdAt: Date.now() }]
@@ -303,6 +335,8 @@ export default function App() {
     enqueueJobs(order, kick) // kitchen ticket → chef printer, receipt (+drawer kick) → billing printer
     audit('order.completed', `${order.number} · ${method} · ${(total / 100).toFixed(2)}`)
     setCart({})
+    setDiscount(null)
+    setOrderNote('')
     setPayOpen(false)
     setReceipt(order)
     flash('Kitchen ticket → chef printer · receipt → billing printer')
@@ -315,7 +349,7 @@ export default function App() {
       label: `${customer?.name ?? 'Order'} ${state.seq}`,
       type: orderType,
       customer: customer?.name ?? 'Walk-in',
-      lines: lines.map((l) => ({ itemId: l.item.id, qty: l.qty })),
+      lines: lines.map((l) => ({ itemId: l.item.id, qty: l.qty, note: l.note })),
       createdAt: Date.now(),
     }
     setState((s) => ({ ...s, held: [held, ...s.held] }))
@@ -326,8 +360,8 @@ export default function App() {
   const recallHeld = (id: string) => {
     const h = state.held.find((x) => x.id === id)
     if (!h) return
-    const next: Record<string, number> = {}
-    h.lines.forEach((l) => (next[l.itemId] = l.qty))
+    const next: CartMap = {}
+    h.lines.forEach((l) => (next[l.itemId] = { qty: l.qty, note: l.note }))
     setCart(next)
     setOrderType(h.type)
     const cust = state.customers.find((c) => c.name === h.customer)
@@ -426,6 +460,23 @@ export default function App() {
       menu: s.menu.map((m) => (m.id === id ? { ...m, available: !m.available } : m)),
     }))
 
+  const saveCategory = (c: Category) =>
+    setState((s) => ({
+      ...s,
+      categories: s.categories.some((x) => x.id === c.id)
+        ? s.categories.map((x) => (x.id === c.id ? c : x))
+        : [...s.categories, c],
+    }))
+
+  const deleteCategory = (id: string) => {
+    if (state.menu.some((m) => m.category === id)) {
+      flash('Move items out of the category first')
+      return
+    }
+    setState((s) => ({ ...s, categories: s.categories.filter((c) => c.id !== id) }))
+    if (category === id) setCategory(state.categories[0]?.id ?? 'sushi')
+  }
+
   const orderNumber = `#${state.settings.orderPrefix}${state.seq}`
 
   // ---------- Staff management ----------
@@ -516,6 +567,7 @@ export default function App() {
             <DashboardPage
               user={user}
               items={visibleItems}
+              categories={state.categories}
               category={category}
               onCategory={(c) => {
                 setCategory(c)
@@ -540,6 +592,7 @@ export default function App() {
             orderNumber={orderNumber}
             lines={lines}
             subtotal={subtotal}
+            discount={discountCents}
             tax={tax}
             total={total}
             paymentMethod={payment}
@@ -547,10 +600,17 @@ export default function App() {
             customerId={customerId}
             customers={state.customers}
             heldCount={state.held.length}
+            discountInput={discount}
+            orderNote={orderNote}
             onPaymentChange={setPayment}
             onTypeChange={setOrderType}
             onCustomerChange={setCustomerId}
+            onLineQty={lineQty}
+            onLineNote={setLineNote}
             onRemoveLine={removeLine}
+            onClear={clearCart}
+            onDiscountChange={setDiscount}
+            onOrderNote={setOrderNote}
             onHold={holdOrder}
             onPrint={() => flash('Receipt sent to billing printer')}
             onOrder={() => setPayOpen(true)}
@@ -566,9 +626,12 @@ export default function App() {
       {view === 'menu' && (
         <MenuPage
           menu={state.menu}
+          categories={state.categories}
           onSave={saveMenuItem}
           onDelete={deleteMenuItem}
           onToggle={toggleMenuItem}
+          onSaveCategory={saveCategory}
+          onDeleteCategory={deleteCategory}
         />
       )}
       {view === 'printers' && (
