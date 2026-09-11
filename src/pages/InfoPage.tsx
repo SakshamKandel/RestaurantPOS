@@ -1,6 +1,7 @@
 import { DatabaseBackup, HardDrive, Info, Printer, ScrollText, Vault, WifiOff } from 'lucide-react'
 import type { Settings } from '../data/menu'
 import type { AuditEvent, DetectedPrinter } from '../store'
+import logoIcon from '../assets/icon.png'
 
 interface Props {
   settings: Settings
@@ -34,7 +35,7 @@ export default function InfoPage({ settings, orderCount, audit, printers, versio
       <div className="mt-5 grid grid-cols-2 gap-4">
         <section className="rounded-3xl bg-white p-6 shadow-sm">
           <div className="flex items-center gap-3">
-            <img src="/icon.png" alt="KhadkaPOS" className="h-12 w-12 rounded-2xl object-contain shadow-md shadow-blue-500/20" />
+            <img src={logoIcon} alt="KhadkaPOS" className="h-12 w-12 object-contain" />
             <div>
               <p className="text-[17px] font-extrabold">KhadkaPOS</p>
               <p className="text-[11.5px] font-medium text-neutral-400">

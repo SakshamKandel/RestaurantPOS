@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { Role } from '../data/menu'
+import logoIcon from '../assets/icon.png'
 
 export type View =
   | 'dashboard'
@@ -86,7 +87,7 @@ export default function Sidebar({ view, role, userName, onNavigate, onLogout }: 
   return (
     <aside className="flex w-[212px] shrink-0 flex-col border-r border-neutral-200/70 bg-white px-4 py-6">
       <div className="mb-8 flex items-center gap-2.5 px-1.5">
-        <img src="/icon.png" alt="KhadkaPOS" className="h-9 w-9 rounded-xl object-contain shadow-md shadow-blue-500/20" />
+        <img src={logoIcon} alt="KhadkaPOS" className="h-9 w-9 object-contain" />
         <span className="text-[19px] font-extrabold tracking-tight">Khadka</span>
       </div>
 

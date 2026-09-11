@@ -126,10 +126,6 @@ export interface Customer {
 }
 
 export const SEED_CUSTOMERS: Customer[] = [
-  { id: 'c1', name: 'Haaland Joy', phone: '+1 (415) 555-0132', visits: 14, spent: 18650 },
-  { id: 'c2', name: 'Aiko Tanaka', phone: '+1 (415) 555-0177', visits: 9, spent: 12400 },
-  { id: 'c3', name: 'Brian Santos', phone: '+1 (628) 555-0119', visits: 22, spent: 30120 },
-  { id: 'c4', name: 'Mina Kobayashi', phone: '+1 (628) 555-0145', visits: 6, spent: 7310 },
   { id: 'c5', name: 'Walk-in', phone: '-', visits: 0, spent: 0 },
 ]
 

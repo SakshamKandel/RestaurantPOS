@@ -1,22 +1,31 @@
 import { useState } from 'react'
-import { Phone, Plus, Search, ShoppingBag, X } from 'lucide-react'
+import { Pencil, Phone, Plus, Search, ShoppingBag, Trash2, X } from 'lucide-react'
 import { formatMoney, type Customer } from '../data/menu'
 
 interface Props {
   customers: Customer[]
   onAdd: (c: Omit<Customer, 'id' | 'visits' | 'spent'>) => void
+  onUpdate: (id: string, patch: Partial<Customer>) => void
+  onDelete: (id: string) => void
   onNewOrder: (c: Customer) => void
 }
 
-export default function CustomersPage({ customers, onAdd, onNewOrder }: Props) {
+export default function CustomersPage({ customers, onAdd, onUpdate, onDelete, onNewOrder }: Props) {
   const [query, setQuery] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [form, setForm] = useState({ name: '', phone: '' })
+  const [form, setForm] = useState<{ id: string | null; name: string; phone: string } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const q = query.trim().toLowerCase()
   const visible = customers.filter(
     (c) => c.name.toLowerCase().includes(q) || c.phone.includes(q),
   )
+
+  const submit = () => {
+    if (!form || !form.name.trim()) return
+    if (form.id) onUpdate(form.id, { name: form.name.trim(), phone: form.phone.trim() })
+    else onAdd({ name: form.name.trim(), phone: form.phone.trim() })
+    setForm(null)
+  }
 
   return (
     <div className="thin-scroll flex-1 overflow-y-auto px-6 pb-6">
@@ -38,7 +47,7 @@ export default function CustomersPage({ customers, onAdd, onNewOrder }: Props) {
             />
           </label>
           <button
-            onClick={() => setAdding(true)}
+            onClick={() => setForm({ id: null, name: '', phone: '' })}
             className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[12.5px] font-extrabold text-white shadow-md shadow-orange-500/25 hover:bg-primary-dark"
           >
             <Plus size={15} strokeWidth={2.6} />
@@ -55,7 +64,7 @@ export default function CustomersPage({ customers, onAdd, onNewOrder }: Props) {
               <th className="px-5 py-3.5">Phone</th>
               <th className="px-5 py-3.5">Visits</th>
               <th className="px-5 py-3.5">Total Spent</th>
-              <th className="px-5 py-3.5 text-right">Action</th>
+              <th className="px-5 py-3.5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-50">
@@ -79,14 +88,42 @@ export default function CustomersPage({ customers, onAdd, onNewOrder }: Props) {
                 <td className="px-5 py-3.5 text-[12.5px] font-extrabold text-primary">
                   {formatMoney(c.spent)}
                 </td>
-                <td className="px-5 py-3.5 text-right">
-                  <button
-                    onClick={() => onNewOrder(c)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-[11px] font-bold text-neutral-600 transition-colors hover:border-primary hover:text-primary"
-                  >
-                    <ShoppingBag size={12} />
-                    New Order
-                  </button>
+                <td className="px-5 py-3.5">
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      onClick={() => onNewOrder(c)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-[11px] font-bold text-neutral-600 transition-colors hover:border-primary hover:text-primary"
+                    >
+                      <ShoppingBag size={12} />
+                      New Order
+                    </button>
+                    <button
+                      onClick={() => setForm({ id: c.id, name: c.name, phone: c.phone })}
+                      title="Edit customer"
+                      className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-primary hover:text-primary"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    {c.id === 'c5' ? (
+                      <span className="w-7" title="Walk-in can't be deleted" />
+                    ) : confirmDelete === c.id ? (
+                      <button
+                        onClick={() => { onDelete(c.id); setConfirmDelete(null) }}
+                        onMouseLeave={() => setConfirmDelete(null)}
+                        className="rounded-lg bg-red-500 px-2.5 py-1.5 text-[10.5px] font-bold text-white"
+                      >
+                        Sure?
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDelete(c.id)}
+                        title="Delete customer"
+                        className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-red-300 hover:text-red-500"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -99,12 +136,12 @@ export default function CustomersPage({ customers, onAdd, onNewOrder }: Props) {
         )}
       </div>
 
-      {adding && (
+      {form && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="w-[380px] rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between">
-              <p className="text-[15px] font-extrabold">New Customer</p>
-              <button onClick={() => setAdding(false)} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
+              <p className="text-[15px] font-extrabold">{form.id ? 'Edit Customer' : 'New Customer'}</p>
+              <button onClick={() => setForm(null)} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
                 <X size={17} />
               </button>
             </div>
@@ -124,16 +161,11 @@ export default function CustomersPage({ customers, onAdd, onNewOrder }: Props) {
               />
             </div>
             <button
-              onClick={() => {
-                if (!form.name.trim()) return
-                onAdd(form)
-                setForm({ name: '', phone: '' })
-                setAdding(false)
-              }}
+              onClick={submit}
               disabled={!form.name.trim()}
               className="mt-5 w-full rounded-xl bg-primary py-3 text-[13px] font-extrabold text-white shadow-md shadow-orange-500/25 hover:bg-primary-dark disabled:opacity-40"
             >
-              Save Customer
+              {form.id ? 'Save Changes' : 'Save Customer'}
             </button>
           </div>
         </div>

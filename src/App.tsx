@@ -9,11 +9,11 @@ import OrderPanel, {
 import LoginScreen from './components/LoginScreen'
 import PaymentModal from './components/PaymentModal'
 import ReceiptModal from './components/ReceiptModal'
+import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
 import MenuPage from './pages/MenuPage'
 import PrintersPage from './pages/PrintersPage'
 import ShiftPage from './pages/ShiftPage'
-import CustomersPage from './pages/CustomersPage'
 import TransactionsPage from './pages/TransactionsPage'
 import ReportPage from './pages/ReportPage'
 import SettingsPage from './pages/SettingsPage'
@@ -286,6 +286,14 @@ export default function App() {
     )
     .reduce((s, o) => s + o.total, 0)
 
+  const itemCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    state.menu.forEach((m) => {
+      counts[m.category] = (counts[m.category] ?? 0) + 1
+    })
+    return counts
+  }, [state.menu])
+
   const visibleItems = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (q) return state.menu.filter((m) => m.name.toLowerCase().includes(q))
@@ -446,11 +454,6 @@ export default function App() {
     else flash('Cash count recorded')
   }
 
-  const addCustomer = (c: Omit<Customer, 'id' | 'visits' | 'spent'>) =>
-    setState((s) => ({
-      ...s,
-      customers: [...s.customers, { ...c, id: uid(), visits: 0, spent: 0 }],
-    }))
 
   const saveMenuItem = (item: MenuItem) =>
     setState((s) => ({
@@ -462,6 +465,24 @@ export default function App() {
 
   const deleteMenuItem = (id: string) =>
     setState((s) => ({ ...s, menu: s.menu.filter((m) => m.id !== id) }))
+
+  const addCustomer = (c: Omit<Customer, 'id' | 'visits' | 'spent'>) =>
+    setState((s) => ({
+      ...s,
+      customers: [...s.customers, { ...c, id: uid(), visits: 0, spent: 0 }],
+    }))
+
+  const updateCustomer = (id: string, patch: Partial<Customer>) =>
+    setState((s) => ({
+      ...s,
+      customers: s.customers.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    }))
+
+  const deleteCustomer = (id: string) => {
+    if (id === 'c5') return
+    setState((s) => ({ ...s, customers: s.customers.filter((c) => c.id !== id) }))
+    if (customerId === id) setCustomerId('c5')
+  }
 
   const toggleMenuItem = (id: string) =>
     setState((s) => ({
@@ -600,6 +621,7 @@ export default function App() {
               user={user}
               items={visibleItems}
               categories={state.categories}
+              itemCounts={itemCounts}
               category={category}
               onCategory={(c) => {
                 setCategory(c)
@@ -655,6 +677,19 @@ export default function App() {
         </>
       )}
 
+      {view === 'customers' && (
+        <CustomersPage
+          customers={state.customers}
+          onAdd={addCustomer}
+          onUpdate={updateCustomer}
+          onDelete={deleteCustomer}
+          onNewOrder={(c) => {
+            setCustomerId(c.id)
+            setView('dashboard')
+            flash(`New order for ${c.name}`)
+          }}
+        />
+      )}
       {view === 'menu' && (
         <MenuPage
           menu={state.menu}
@@ -673,17 +708,6 @@ export default function App() {
           settings={state.settings}
           printers={printers}
           onRetry={retryJob}
-        />
-      )}
-      {view === 'customers' && (
-        <CustomersPage
-          customers={state.customers}
-          onAdd={addCustomer}
-          onNewOrder={(c) => {
-            setCustomerId(c.id)
-            setView('dashboard')
-            flash(`New order for ${c.name}`)
-          }}
         />
       )}
       {view === 'transactions' && (

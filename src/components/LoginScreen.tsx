@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Delete, KeyRound, Lock, ShieldCheck } from 'lucide-react'
 import type { Staff } from '../data/menu'
+import logoIcon from '../assets/icon.png'
 
 const PAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del']
 
@@ -102,7 +103,7 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
         {/* Left panel — staff picker, or first-boot admin setup */}
         <div className="w-[380px] border-r border-neutral-100 p-8">
           <div className="flex items-center gap-2.5">
-            <img src="/icon.png" alt="KhadkaPOS" className="h-10 w-10 rounded-xl object-contain" />
+            <img src={logoIcon} alt="KhadkaPOS" className="h-10 w-10 object-contain" />
             <span className="text-[20px] font-extrabold tracking-tight">Khadka</span>
           </div>
 

@@ -16,6 +16,7 @@ interface Props {
   user: Staff
   items: MenuItem[]
   categories: Category[]
+  itemCounts: Record<string, number>
   category: CategoryId
   onCategory: (c: CategoryId) => void
   cart: CartMap
@@ -37,6 +38,7 @@ export default function DashboardPage({
   user,
   items,
   categories,
+  itemCounts,
   category,
   onCategory,
   cart,
@@ -121,6 +123,7 @@ export default function DashboardPage({
       <MenuSection
         items={items}
         categories={categories}
+        itemCounts={itemCounts}
         activeCategory={category}
         onCategoryChange={onCategory}
         cart={cart}

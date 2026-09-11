@@ -48,6 +48,7 @@ function DishImage({ item }: { item: MenuItem }) {
 interface Props {
   items: MenuItem[]
   categories: Category[]
+  itemCounts: Record<string, number>
   activeCategory: CategoryId
   onCategoryChange: (c: CategoryId) => void
   cart: CartMap
@@ -59,6 +60,7 @@ interface Props {
 export default function MenuSection({
   items,
   categories,
+  itemCounts,
   activeCategory,
   onCategoryChange,
   cart,
@@ -102,7 +104,7 @@ export default function MenuSection({
                   {c.label}
                 </span>
                 <span className="block text-[10px] font-medium text-neutral-400">
-                  {items.filter((i) => i.category === c.id).length} Items
+                  {itemCounts[c.id] ?? 0} Items
                 </span>
               </span>
             </button>
