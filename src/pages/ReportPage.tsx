@@ -8,7 +8,11 @@ interface Props {
 
 export default function ReportPage({ orders }: Props) {
   const valid = orders.filter((o) => o.status !== 'refunded')
+  const todayStr = new Date().toDateString()
+  const todayOrders = valid.filter((o) => new Date(o.createdAt).toDateString() === todayStr)
+
   const gross = valid.reduce((s, o) => s + o.total, 0)
+  const todayGross = todayOrders.reduce((s, o) => s + o.total, 0)
   const tax = valid.reduce((s, o) => s + o.tax, 0)
   const refunded = orders.filter((o) => o.status === 'refunded').reduce((s, o) => s + o.total, 0)
   const avg = valid.length ? Math.round(gross / valid.length) : 0
@@ -52,11 +56,23 @@ export default function ReportPage({ orders }: Props) {
 
   return (
     <div className="thin-scroll flex-1 overflow-y-auto px-6 pb-6">
-      <header className="pt-6">
-        <h1 className="text-[20px] font-extrabold tracking-tight">Today's Report</h1>
-        <p className="text-[12px] font-medium text-neutral-400">
-          {new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })} · Register 01
-        </p>
+      <header className="flex items-center justify-between pt-6">
+        <div>
+          <h1 className="text-[20px] font-extrabold tracking-tight">Today's Report</h1>
+          <p className="text-[12px] font-medium text-neutral-400">
+            {new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })} · Register 01
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <div className="rounded-2xl bg-white px-5 py-3 shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Today</p>
+            <p className="text-[18px] font-extrabold">{formatMoney(todayGross)}</p>
+          </div>
+          <div className="rounded-2xl bg-primary px-5 py-3 shadow-lg shadow-orange-500/25">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Total Sales (All Time)</p>
+            <p className="text-[18px] font-extrabold text-white">{formatMoney(gross)}</p>
+          </div>
+        </div>
       </header>
 
       <div className="mt-5 grid grid-cols-5 gap-3.5">

@@ -1,8 +1,10 @@
 import {
   DEFAULT_SETTINGS,
+  MENU_ITEMS,
   SEED_CUSTOMERS,
   type Cents,
   type Customer,
+  type MenuItem,
   type Settings,
 } from './data/menu'
 import type { PaymentMethod } from './components/OrderPanel'
@@ -60,6 +62,7 @@ export interface PosState {
   held: HeldOrder[]
   customers: Customer[]
   printJobs: PrintJob[]
+  menu: MenuItem[]
   settings: Settings
   seq: number
 }
@@ -69,6 +72,7 @@ export const initialState: PosState = {
   held: [],
   customers: SEED_CUSTOMERS,
   printJobs: [],
+  menu: MENU_ITEMS,
   settings: DEFAULT_SETTINGS,
   seq: 935,
 }

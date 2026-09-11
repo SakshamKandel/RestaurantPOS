@@ -1,8 +1,10 @@
-import { Bell, ChevronDown, History, Search } from 'lucide-react'
+import { Bell, ChevronDown, History, Search, TrendingUp } from 'lucide-react'
 import OrderLine, { type DisplayOrder } from '../components/OrderLine'
 import MenuSection from '../components/MenuSection'
 import {
+  formatMoney,
   type CategoryId,
+  type Cents,
   type MenuItem,
   type OrderStatus,
   type Staff,
@@ -26,6 +28,7 @@ interface Props {
   onQuery: (q: string) => void
   held: HeldOrder[]
   onRecall: (id: string) => void
+  todaySales: Cents
 }
 
 export default function DashboardPage({
@@ -45,6 +48,7 @@ export default function DashboardPage({
   onQuery,
   held,
   onRecall,
+  todaySales,
 }: Props) {
   return (
     <>
@@ -60,6 +64,11 @@ export default function DashboardPage({
         </label>
 
         <div className="ml-auto flex items-center gap-4">
+          <span className="flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 shadow-sm">
+            <TrendingUp size={15} className="text-emerald-500" />
+            <span className="text-[12px] font-bold text-neutral-400">Today</span>
+            <span className="text-[13px] font-extrabold">{formatMoney(todaySales)}</span>
+          </span>
           <button className="relative rounded-xl p-2 text-neutral-500 transition-colors hover:bg-white">
             <Bell size={18} />
             <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary ring-2 ring-canvas" />

@@ -8,6 +8,7 @@ import {
   Settings,
   Soup,
   Users,
+  UtensilsCrossed,
   type LucideIcon,
 } from 'lucide-react'
 import type { Role } from '../data/menu'
@@ -15,6 +16,7 @@ import type { Role } from '../data/menu'
 export type View =
   | 'dashboard'
   | 'customers'
+  | 'menu'
   | 'report'
   | 'transactions'
   | 'printers'
@@ -31,6 +33,7 @@ interface NavItem {
 const MAIN_NAV: NavItem[] = [
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['cashier', 'kitchen', 'manager'] },
   { view: 'customers', label: 'Customers', icon: Users, roles: ['cashier', 'manager'] },
+  { view: 'menu', label: 'Menu', icon: UtensilsCrossed, roles: ['manager'] },
   { view: 'printers', label: 'Printers', icon: Printer, roles: ['cashier', 'manager'] },
   { view: 'report', label: 'Report', icon: LineChart, roles: ['manager'] },
   { view: 'transactions', label: 'Transaction', icon: ArrowLeftRight, roles: ['cashier', 'manager'] },

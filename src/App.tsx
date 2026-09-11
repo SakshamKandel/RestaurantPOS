@@ -9,6 +9,7 @@ import LoginScreen from './components/LoginScreen'
 import PaymentModal from './components/PaymentModal'
 import ReceiptModal from './components/ReceiptModal'
 import DashboardPage from './pages/DashboardPage'
+import MenuPage from './pages/MenuPage'
 import PrintersPage from './pages/PrintersPage'
 import CustomersPage from './pages/CustomersPage'
 import TransactionsPage from './pages/TransactionsPage'
@@ -17,9 +18,9 @@ import SettingsPage from './pages/SettingsPage'
 import InfoPage from './pages/InfoPage'
 import {
   LINE_ORDERS,
-  MENU_ITEMS,
   type CategoryId,
   type Customer,
+  type MenuItem,
   type OrderStatus,
   type Staff,
 } from './data/menu'
@@ -165,21 +166,29 @@ export default function App() {
 
   const lines: CartLine[] = useMemo(
     () =>
-      MENU_ITEMS.filter((m) => cart[m.id]).map((m) => ({
+      state.menu.filter((m) => cart[m.id]).map((m) => ({
         item: m,
         qty: cart[m.id],
       })),
-    [cart],
+    [cart, state.menu],
   )
   const subtotal = lines.reduce((s, l) => s + l.item.price * l.qty, 0)
   const tax = Math.round(subtotal * state.settings.taxRate)
   const total = subtotal + tax
 
+  const todaySales = state.orders
+    .filter(
+      (o) =>
+        o.status !== 'refunded' &&
+        new Date(o.createdAt).toDateString() === new Date().toDateString(),
+    )
+    .reduce((s, o) => s + o.total, 0)
+
   const visibleItems = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (q) return MENU_ITEMS.filter((m) => m.name.toLowerCase().includes(q))
-    return MENU_ITEMS.filter((m) => m.category === category)
-  }, [category, query])
+    if (q) return state.menu.filter((m) => m.name.toLowerCase().includes(q))
+    return state.menu.filter((m) => m.category === category)
+  }, [category, query, state.menu])
 
   // ---------- Order line strip (seeded + live orders) ----------
   const liveLineOrders: DisplayOrder[] = state.orders
@@ -272,6 +281,23 @@ export default function App() {
       customers: [...s.customers, { ...c, id: uid(), visits: 0, spent: 0 }],
     }))
 
+  const saveMenuItem = (item: MenuItem) =>
+    setState((s) => ({
+      ...s,
+      menu: s.menu.some((m) => m.id === item.id)
+        ? s.menu.map((m) => (m.id === item.id ? item : m))
+        : [...s.menu, item],
+    }))
+
+  const deleteMenuItem = (id: string) =>
+    setState((s) => ({ ...s, menu: s.menu.filter((m) => m.id !== id) }))
+
+  const toggleMenuItem = (id: string) =>
+    setState((s) => ({
+      ...s,
+      menu: s.menu.map((m) => (m.id === id ? { ...m, available: !m.available } : m)),
+    }))
+
   const orderNumber = `#${state.settings.orderPrefix}${state.seq}`
 
   if (!user) return <LoginScreen onLogin={setUser} />
@@ -312,6 +338,7 @@ export default function App() {
               onQuery={setQuery}
               held={state.held}
               onRecall={recallHeld}
+              todaySales={todaySales}
             />
           </main>
           <OrderPanel
@@ -336,6 +363,14 @@ export default function App() {
         </>
       )}
 
+      {view === 'menu' && (
+        <MenuPage
+          menu={state.menu}
+          onSave={saveMenuItem}
+          onDelete={deleteMenuItem}
+          onToggle={toggleMenuItem}
+        />
+      )}
       {view === 'printers' && (
         <PrintersPage
           jobs={state.printJobs}
