@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('pos', {
   login: (id, pin) => ipcRenderer.invoke('auth:login', { id, pin }),
   setPin: (id, pin) => ipcRenderer.invoke('auth:set-pin', { id, pin }),
   exportCsv: (payload) => ipcRenderer.invoke('export:csv', payload),
+  // receipt archive (PDF copies of printed bills)
+  saveReceipt: (payload) => ipcRenderer.invoke('receipts:save', payload),
+  openReceipts: (orderNumber) => ipcRenderer.invoke('receipts:open', orderNumber),
   // error logs
   logError: (category, message) => ipcRenderer.invoke('logs:append', { category, message }),
   listLogs: () => ipcRenderer.invoke('logs:list'),

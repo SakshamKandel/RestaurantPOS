@@ -1,6 +1,6 @@
-import { Printer, X } from 'lucide-react'
+import { FolderOpen, Printer, X } from 'lucide-react'
 import type { Settings } from '../data/menu'
-import type { PlacedOrder } from '../store'
+import { openReceiptsFolder, type PlacedOrder } from '../store'
 import { receiptHtml } from '../print/docs'
 
 interface Props {
@@ -31,18 +31,26 @@ export default function ReceiptModal({ order, settings, onPrint, onClose }: Prop
         <div className="mt-4 flex gap-2.5">
           <button
             onClick={onClose}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white py-2.5 text-[12.5px] font-bold text-neutral-600 hover:bg-neutral-50"
+            className="flex items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-[12.5px] font-bold text-neutral-600 hover:bg-neutral-50"
           >
             <X size={15} />
             Close
           </button>
           <button
+            onClick={() => void openReceiptsFolder(order.number)}
+            title="Show this bill's saved PDF copy in Explorer"
+            className="flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-[12.5px] font-bold text-neutral-600 hover:bg-neutral-50"
+          >
+            <FolderOpen size={15} />
+            Show in folder
+          </button>
+          <button
             onClick={onPrint}
             title={canPrint ? 'Send to the billing printer' : 'Billing printer is off or unassigned — see Settings'}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-[12.5px] font-bold text-white shadow-md shadow-orange-500/25 hover:bg-primary-dark"
+            className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 py-2.5 text-[12.5px] font-bold text-white shadow-md shadow-orange-500/25 hover:bg-primary-dark"
           >
             <Printer size={15} />
-            {canPrint ? 'Print' : 'Print (not set up)'}
+            {canPrint ? 'Print' : 'No printer'}
           </button>
         </div>
       </div>

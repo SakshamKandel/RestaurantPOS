@@ -57,6 +57,7 @@ import {
   printDocument,
   printRaw,
   drawerKickBytes,
+  saveReceiptCopy,
   setPinSecure,
   timeAgo,
   verifyLogin,
@@ -237,21 +238,27 @@ export default function App() {
   const processJob = (job: PrintJob, order?: PlacedOrder) => {
     const s = state.settings
     const deviceName = deviceFor(job.role)
+
+    // Archive reprint copies as PDFs before touching the printer — the stored
+    // copy is the record even when no printer is usable. (Originals are saved
+    // at sale time in placeOrder.)
+    if (job.docType === 'RECEIPT' && order && job.copy)
+      void saveReceiptCopy(order.number, receiptHtml(order, s, true), paperFor(job.role), true)
+
     const problem = roleProblem(job.role)
     if (problem) return markJob(job, 'failed', problem)
+
+    const html =
+      job.docType === 'KITCHEN TICKET' && order
+        ? kitchenHtml(order, s)
+        : job.docType === 'RECEIPT' && order
+          ? receiptHtml(order, s, job.copy)
+          : testHtml(job.role, s)
 
     const send =
       job.docType === 'DRAWER KICK'
         ? printRaw(deviceName, drawerKickBytes(s.drawerPin))
-        : printDocument(
-            deviceName,
-            job.docType === 'KITCHEN TICKET' && order
-              ? kitchenHtml(order, s)
-              : job.docType === 'RECEIPT' && order
-                ? receiptHtml(order, s, job.copy)
-                : testHtml(job.role, s),
-            paperFor(job.role),
-          )
+        : printDocument(deviceName, html, paperFor(job.role))
 
     if (!send) return markJob(job, 'failed', 'Printing is only available in the desktop app')
     send
@@ -290,14 +297,23 @@ export default function App() {
     return job
   }
 
-  const openDrawer = (reason: string) => {
+  /** Kick the drawer. Returns true only when a pulse was actually sent —
+   *  callers use it to decide whether a no-sale movement should be recorded. */
+  const openDrawer = (reason: string): boolean => {
     const s = state.settings
-    if (!s.cashDrawer) return flash('Cash drawer is turned off in Settings')
+    if (!s.cashDrawer) {
+      flash('Cash drawer is turned off — enable it in Settings → Cash Drawer')
+      return false
+    }
     const problem = roleProblem('billing')
-    if (problem) return flash(`Can't open drawer — ${problem}`)
+    if (problem) {
+      flash(`Can't open drawer — ${problem}`)
+      return false
+    }
     queueJob('DRAWER KICK', 'billing')
     audit('drawer.open', reason)
     flash(`Drawer pulse sent → ${s.billingPrinter}`)
+    return true
   }
 
   const testPrint = (role: PrinterRole) => {
@@ -563,6 +579,9 @@ export default function App() {
       ),
     }))
     const st = state.settings
+    // A PDF copy of the bill is always archived under userData/receipts —
+    // whether or not a physical printer is set up.
+    void saveReceiptCopy(order.number, receiptHtml(order, st, false), Number(st.billingPaper), false)
     const kick = payments.some((p) => p.method === 'cash') && st.cashDrawer && st.drawerOnCash
     enqueueJobs(order, kick) // kitchen ticket → chef printer · receipt (+drawer pulse) → billing printer
     setLastOrder(order)
@@ -727,18 +746,46 @@ export default function App() {
     const current = state.shifts.find((s) => s.closedAt === null)
     if (!current) return
     const lastCount = current.movements.filter((m) => m.type === 'count').at(-1)?.amount ?? null
-    const cashSales = state.orders
-      .filter((o) => o.createdAt >= current.openedAt && o.status !== 'refunded' && o.payment === 'cash')
-      .reduce((s, o) => s + o.total, 0)
+    // Same math as the live X-report: split-aware cash totals, cash refunds out.
+    const shiftOrders = state.orders.filter(
+      (o) => o.createdAt >= current.openedAt && o.status !== 'refunded',
+    )
+    const pays = (o: PlacedOrder) =>
+      o.payments?.length ? o.payments : [{ method: o.payment, amount: o.total }]
+    const cashSales = shiftOrders.reduce(
+      (s, o) => s + pays(o).filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0),
+      0,
+    )
+    const cashRefunds = state.orders
+      .filter((o) => o.createdAt >= current.openedAt)
+      .reduce(
+        (s, o) =>
+          s + (pays(o).some((p) => p.method === 'cash') ? (o.refunds ?? []).reduce((a, r) => a + r.amount, 0) : 0),
+        0,
+      )
+    const totalSales = shiftOrders.reduce((s, o) => s + o.total, 0)
     const inOut = current.movements.reduce(
       (s, m) => s + (m.type === 'paid-in' ? m.amount : m.type === 'paid-out' ? -m.amount : 0),
       0,
     )
-    const expected = current.float + cashSales + inOut
+    const expected = current.float + cashSales + inOut - cashRefunds
     setState((s) => ({
       ...s,
       shifts: s.shifts.map((sh) =>
-        sh.id === current.id ? { ...sh, closedAt: Date.now(), counted: lastCount } : sh,
+        sh.id === current.id
+          ? {
+              ...sh,
+              closedAt: Date.now(),
+              closedBy: user?.name ?? 'Unknown',
+              counted: lastCount,
+              orderCount: shiftOrders.length,
+              totalSales,
+              cashSales,
+              cashRefunds,
+              expected,
+              variance: lastCount === null ? undefined : lastCount - expected,
+            }
+          : sh,
       ),
     }))
     audit(
@@ -1100,8 +1147,8 @@ export default function App() {
             onReprintLast={() => lastOrder && setReceipt(lastOrder)}
             drawerEnabled={state.settings.cashDrawer}
             onOpenDrawer={() => {
-              openDrawer('No-sale open from order screen')
-              addMovement('no-sale', 0, 'No-sale drawer open')
+              if (openDrawer('No-sale open from order screen'))
+                addMovement('no-sale', 0, 'No-sale drawer open')
             }}
           />
         </>

@@ -481,6 +481,70 @@ ipcMain.handle('printers:print', (_e, { deviceName, html, paperWidthMm }) => {
   })
 })
 
+// --- Receipt archive: every printed bill is also rendered to a PDF under
+//     userData/receipts — one file per order (copies get their own file). ---
+const receiptsDir = () => path.join(app.getPath('userData'), 'receipts')
+const receiptFileFor = (orderNumber) =>
+  path.join(receiptsDir(), `${String(orderNumber).replace(/[^\w-]/g, '')}.pdf`)
+
+ipcMain.handle('receipts:save', (_e, { orderNumber, html, paperWidthMm, copy }) => {
+  return new Promise((resolve) => {
+    const win = new BrowserWindow({ show: false })
+    const done = (file) => {
+      clearTimeout(timer)
+      try { win.close() } catch {}
+      resolve(file)
+    }
+    const timer = setTimeout(() => done(null), 20000)
+    win.webContents.once('did-finish-load', () => {
+      // printToPDF rejects a custom micron pageSize on this stack — instead we
+      // pin @page to a fixed receipt-sized page and let CSS drive it.
+      const mm = Number(paperWidthMm) || 80
+      const pdfHtml = String(html).replace(
+        /@page\{[^}]*\}/,
+        `@page{margin:0;size:${mm}mm 500mm}`,
+      )
+      setTimeout(() => {
+        win.webContents
+          .printToPDF({ printBackground: true, preferCSSPageSize: true })
+          .then((buf) => {
+          try {
+            fs.mkdirSync(receiptsDir(), { recursive: true })
+            const base = receiptFileFor(orderNumber)
+            const file = copy ? base.replace(/\.pdf$/, `-copy-${Date.now()}.pdf`) : base
+            fs.writeFileSync(file, buf)
+            done(file)
+          } catch (e) {
+            logToFile('printer', `receipt pdf write failed: ${e?.message ?? e}`)
+            done(null)
+          }
+        })
+          .catch((e) => {
+            logToFile('printer', `receipt pdf render failed: ${e?.message ?? e}`)
+            done(null)
+          })
+      }, 300)
+    })
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+  })
+})
+
+// Reveal an order's saved PDF in Explorer; falls back to opening the folder.
+ipcMain.handle('receipts:open', (_e, orderNumber) => {
+  try {
+    fs.mkdirSync(receiptsDir(), { recursive: true })
+    const file = receiptFileFor(orderNumber ?? '')
+    if (orderNumber && fs.existsSync(file)) {
+      shell.showItemInFolder(file)
+      return file
+    }
+    void shell.openPath(receiptsDir())
+    return receiptsDir()
+  } catch {
+    return receiptsDir()
+  }
+})
+
 // --- Raw ESC/POS bytes → Windows spooler (RAW datatype) via winspool.drv ---
 // Used for the cash-drawer pulse (ESC p m t1 t2). HTML printing goes through the
 // driver and can't emit control bytes, so we P/Invoke the spooler from PowerShell.

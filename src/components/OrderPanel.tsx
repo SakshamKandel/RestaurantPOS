@@ -414,9 +414,8 @@ export default function OrderPanel({
           </button>
           <button
             onClick={onOpenDrawer}
-            disabled={!drawerEnabled}
-            title={drawerEnabled ? 'Open cash drawer (no sale)' : 'Cash drawer disabled in Settings'}
-            className="flex w-11 items-center justify-center rounded-xl border border-neutral-200 py-2.5 text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+            title={drawerEnabled ? 'Open cash drawer (no sale)' : 'Cash drawer is off — click to see why'}
+            className={`flex w-11 items-center justify-center rounded-xl border border-neutral-200 py-2.5 transition-colors hover:border-neutral-300 hover:bg-neutral-50 ${drawerEnabled ? 'text-neutral-600' : 'text-neutral-300'}`}
           >
             <Vault size={15} />
           </button>

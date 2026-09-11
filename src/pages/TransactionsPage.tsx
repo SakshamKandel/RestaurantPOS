@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Check, FileDown, Printer, RotateCcw, Search } from 'lucide-react'
+import { Check, FileDown, FolderOpen, Printer, RotateCcw, Search } from 'lucide-react'
 import { formatMoney, modsTotal } from '../data/menu'
-import { exportCsv, type PlacedOrder } from '../store'
+import { exportCsv, openReceiptsFolder, type PlacedOrder } from '../store'
 import { PAYMENT_LABEL } from '../components/OrderPanel'
 
 const STATUS_BADGE: Record<PlacedOrder['status'], string> = {
@@ -104,6 +104,14 @@ export default function TransactionsPage({ orders, onRefund, onReprint, onAdvanc
             />
           </label>
           <button
+            onClick={() => void openReceiptsFolder()}
+            title="Open the folder of saved receipt PDFs"
+            className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-[12.5px] font-extrabold text-neutral-600 shadow-sm transition-colors hover:border-primary hover:text-primary"
+          >
+            <FolderOpen size={15} />
+            Receipts
+          </button>
+          <button
             onClick={() =>
               void exportCsv(
                 `khadkapos-orders-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -180,6 +188,13 @@ export default function TransactionsPage({ orders, onRefund, onReprint, onAdvanc
                           <Check size={13} />
                         </button>
                       )}
+                      <button
+                        onClick={() => void openReceiptsFolder(o.number)}
+                        title="Show this bill's saved PDF in Explorer"
+                        className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-primary hover:text-primary"
+                      >
+                        <FolderOpen size={13} />
+                      </button>
                       <button
                         onClick={() => onReprint(o)}
                         title="Reprint receipt (COPY)"

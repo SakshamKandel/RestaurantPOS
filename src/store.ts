@@ -146,9 +146,19 @@ export interface Shift {
   openedAt: number
   closedAt: number | null
   openedBy: string
+  /** Who closed it — may differ from the opener on a handover. */
+  closedBy?: string
   float: Cents
   counted: Cents | null
   movements: DrawerMovement[]
+  /** Z-report snapshot written at close — persists in history. */
+  orderCount?: number
+  totalSales?: Cents
+  cashSales?: Cents
+  cashRefunds?: Cents
+  expected?: Cents
+  /** counted − expected; undefined when the drawer was never counted. */
+  variance?: Cents
 }
 
 // ---------- Audit trail ----------
@@ -254,6 +264,8 @@ interface PosBridge {
   login?: (id: string, pin: string) => Promise<LoginResult>
   setPin?: (id: string, pin: string) => Promise<{ ok: boolean; reason?: string }>
   exportCsv?: (p: { suggestedName: string; csv: string }) => Promise<string | null>
+  saveReceipt?: (p: { orderNumber: string; html: string; paperWidthMm: number; copy: boolean }) => Promise<string | null>
+  openReceipts?: (orderNumber?: string) => Promise<string>
   logError?: (category: string, message: string) => Promise<boolean>
   listLogs?: () => Promise<LogList>
   readLog?: (name: string) => Promise<LogContent | null>
@@ -382,6 +394,18 @@ export const onUpdateError = (cb: (i: { message: string }) => void) =>
 
 /** File picker → copies photo into app data, returns posimg:// URL (or null). */
 export const pickImage = () => bridge?.pickImage?.() ?? Promise.resolve(null)
+
+// ---------- Receipt archive ----------
+
+/** Render a receipt's HTML to PDF under userData/receipts — returns the file
+ *  path, or null in the browser preview / on failure. Never throws. */
+export const saveReceiptCopy = (orderNumber: string, html: string, paperWidthMm: number, copy: boolean) =>
+  bridge?.saveReceipt?.({ orderNumber, html, paperWidthMm, copy }) ?? Promise.resolve(null)
+
+/** Reveal an order's saved PDF in Explorer — opens the folder itself when no
+ *  file exists yet. Returns the path shown. */
+export const openReceiptsFolder = (orderNumber?: string) =>
+  bridge?.openReceipts?.(orderNumber) ?? Promise.resolve('')
 
 // ---------- Error logs ----------
 

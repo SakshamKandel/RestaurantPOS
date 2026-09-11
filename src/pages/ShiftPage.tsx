@@ -20,7 +20,8 @@ interface Props {
   onOpenShift: (float: Cents) => void
   onCloseShift: () => void
   onMovement: (type: 'paid-in' | 'paid-out' | 'no-sale' | 'count', amount: Cents, reason: string) => void
-  onOpenDrawer: (reason: string) => void
+  /** Returns true only when a pulse was actually sent to the drawer. */
+  onOpenDrawer: (reason: string) => boolean
 }
 
 const MOVE_LABEL: Record<string, string> = {
@@ -30,6 +31,10 @@ const MOVE_LABEL: Record<string, string> = {
   'no-sale': 'No-sale open',
   count: 'Cash count',
 }
+
+/** Payment components of an order — split-aware, legacy-fallback. */
+const paysOf = (o: PlacedOrder) =>
+  o.payments?.length ? o.payments : [{ method: o.payment, amount: o.total }]
 
 export default function ShiftPage({
   shifts,
@@ -78,6 +83,47 @@ export default function ShiftPage({
   const counted = current?.movements.filter((m) => m.type === 'count').at(-1)?.amount ?? null
   const variance = counted !== null ? counted - expected : null
 
+  /** Stats for a closed shift — stored snapshot when present, otherwise
+   *  derived from the orders inside its open→close window (legacy rows). */
+  const statsFor = (s: Shift) => {
+    if (s.totalSales !== undefined)
+      return {
+        orderCount: s.orderCount ?? 0,
+        totalSales: s.totalSales,
+        cashSales: s.cashSales ?? 0,
+        expected: s.expected,
+        variance: s.variance,
+      }
+    const end = s.closedAt ?? Number.MAX_SAFE_INTEGER
+    const win = orders.filter(
+      (o) => o.createdAt >= s.openedAt && o.createdAt < end && o.status !== 'refunded',
+    )
+    const totalSales = win.reduce((a, o) => a + o.total, 0)
+    const cashSales = win.reduce(
+      (a, o) => a + paysOf(o).filter((p) => p.method === 'cash').reduce((x, p) => x + p.amount, 0),
+      0,
+    )
+    const cashRefunds = orders
+      .filter((o) => o.createdAt >= s.openedAt && o.createdAt < end)
+      .reduce(
+        (a, o) =>
+          a + (paysOf(o).some((p) => p.method === 'cash') ? (o.refunds ?? []).reduce((x, r) => x + r.amount, 0) : 0),
+        0,
+      )
+    const inOut = s.movements.reduce(
+      (a, m) => a + (m.type === 'paid-in' ? m.amount : m.type === 'paid-out' ? -m.amount : 0),
+      0,
+    )
+    const exp = s.float + cashSales + inOut - cashRefunds
+    return {
+      orderCount: win.length,
+      totalSales,
+      cashSales,
+      expected: exp,
+      variance: s.counted !== null ? s.counted - exp : undefined,
+    }
+  }
+
   const parseAmount = () => Math.round(parseFloat(amount || '0') * 100)
 
   const act = (type: 'paid-in' | 'paid-out' | 'count') => {
@@ -94,7 +140,7 @@ export default function ShiftPage({
         <div>
           <h1 className="text-[20px] font-extrabold tracking-tight">Shift & Cash Drawer</h1>
           <p className="text-[12px] font-medium text-neutral-400">
-            {drawerEnabled ? 'Drawer connected to billing printer (RJ11 kick)' : 'Cash drawer disabled in Settings'}
+            {drawerEnabled ? 'Drawer connected to billing printer (RJ11 kick)' : 'Cash drawer off — enable it in Settings → Cash Drawer'}
           </p>
         </div>
         <span
@@ -165,6 +211,7 @@ export default function ShiftPage({
                   ['+ Cash sales', formatMoney(cashSales)],
                   ['+ Paid in', formatMoney(paidIn)],
                   ['− Paid out', `-${formatMoney(paidOut)}`],
+                  ...(cashRefunds > 0 ? [['− Cash refunds', `-${formatMoney(cashRefunds)}`] as [string, string]] : []),
                 ].map(([l, v]) => (
                   <div key={l} className="flex justify-between text-neutral-500">
                     <span>{l}</span>
@@ -221,12 +268,18 @@ export default function ShiftPage({
               <p className="text-[13px] font-extrabold">Drawer Actions</p>
               <button
                 onClick={() => {
-                  onOpenDrawer(reason || 'No-sale drawer open')
-                  onMovement('no-sale', 0, reason || 'No-sale drawer open')
-                  setReason('')
+                  // movement is recorded only when the drawer actually kicked
+                  if (onOpenDrawer(reason || 'No-sale drawer open')) {
+                    onMovement('no-sale', 0, reason || 'No-sale drawer open')
+                    setReason('')
+                  }
                 }}
-                disabled={!drawerEnabled}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-200 py-3 text-[12.5px] font-bold text-neutral-600 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                title={drawerEnabled ? 'Send a drawer pulse (no sale)' : 'Cash drawer is off — click to see why'}
+                className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl border py-3 text-[12.5px] font-bold transition-colors ${
+                  drawerEnabled
+                    ? 'border-neutral-200 text-neutral-600 hover:border-primary hover:text-primary'
+                    : 'border-neutral-200 text-neutral-400 hover:border-amber-300 hover:text-amber-600'
+                }`}
               >
                 <Vault size={15} />
                 Open Drawer (No Sale)
@@ -313,30 +366,47 @@ export default function ShiftPage({
                 <th className="px-5 py-3">Opened</th>
                 <th className="px-5 py-3">Closed</th>
                 <th className="px-5 py-3">Operator</th>
+                <th className="px-5 py-3">Orders</th>
                 <th className="px-5 py-3">Float</th>
+                <th className="px-5 py-3">Sales</th>
+                <th className="px-5 py-3">Cash Sales</th>
+                <th className="px-5 py-3">Expected</th>
                 <th className="px-5 py-3">Counted</th>
-                <th className="px-5 py-3">Movements</th>
+                <th className="px-5 py-3">Variance</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-50">
-              {[...past].reverse().map((s) => (
-                <tr key={s.id}>
-                  <td className="px-5 py-3 text-[12px] font-semibold">
-                    {new Date(s.openedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </td>
-                  <td className="px-5 py-3 text-[12px] font-semibold">
-                    {new Date(s.closedAt!).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </td>
-                  <td className="px-5 py-3 text-[12px] font-medium text-neutral-500">{s.openedBy}</td>
-                  <td className="px-5 py-3 text-[12px] font-bold">{formatMoney(s.float)}</td>
-                  <td className="px-5 py-3 text-[12px] font-bold">
-                    {s.counted !== null ? formatMoney(s.counted) : '—'}
-                  </td>
-                  <td className="px-5 py-3 text-[12px] font-medium text-neutral-500">
-                    {s.movements.length}
-                  </td>
-                </tr>
-              ))}
+              {[...past].reverse().map((s) => {
+                const st = statsFor(s)
+                return (
+                  <tr key={s.id}>
+                    <td className="px-5 py-3 text-[12px] font-semibold">
+                      {new Date(s.openedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="px-5 py-3 text-[12px] font-semibold">
+                      {new Date(s.closedAt!).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="px-5 py-3 text-[12px] font-medium text-neutral-500">
+                      {s.openedBy}{s.closedBy && s.closedBy !== s.openedBy ? ` → ${s.closedBy}` : ''}
+                    </td>
+                    <td className="px-5 py-3 text-[12px] font-medium text-neutral-500">{st.orderCount}</td>
+                    <td className="px-5 py-3 text-[12px] font-bold">{formatMoney(s.float)}</td>
+                    <td className="px-5 py-3 text-[12px] font-bold">{formatMoney(st.totalSales)}</td>
+                    <td className="px-5 py-3 text-[12px] font-medium text-neutral-500">{formatMoney(st.cashSales)}</td>
+                    <td className="px-5 py-3 text-[12px] font-medium text-neutral-500">
+                      {st.expected !== undefined ? formatMoney(st.expected) : '—'}
+                    </td>
+                    <td className="px-5 py-3 text-[12px] font-bold">
+                      {s.counted !== null ? formatMoney(s.counted) : '—'}
+                    </td>
+                    <td className={`px-5 py-3 text-[12px] font-extrabold ${
+                      st.variance === undefined ? 'text-neutral-400' : st.variance === 0 ? 'text-emerald-600' : 'text-red-500'
+                    }`}>
+                      {st.variance === undefined ? '—' : st.variance === 0 ? 'balanced' : formatMoney(st.variance)}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
