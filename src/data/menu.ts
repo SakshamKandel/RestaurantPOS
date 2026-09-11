@@ -94,7 +94,8 @@ export const LINE_ORDERS: LineOrder[] = []
 
 // ---------- Staff & roles ----------
 
-export type Role = 'cashier' | 'kitchen' | 'manager'
+/** 'admin' is the hidden owner account — never stored in the staff list. */
+export type Role = 'cashier' | 'kitchen' | 'manager' | 'admin'
 
 export interface Staff {
   id: string
@@ -111,6 +112,32 @@ export interface Staff {
 /** Fresh installs start with no staff — the manager sets up the admin account
  *  on first boot, then adds the rest of the team in Staff Management. */
 export const STAFF: Staff[] = []
+
+/** Hidden owner account. Not persisted, not listed anywhere — reached from the
+ *  "Administrator" link on the login screen. Can manage managers and staff,
+ *  and is the recovery path when a manager forgets their PIN. */
+export const SUPER_ADMIN: Staff = {
+  id: 'super-admin',
+  name: 'Administrator',
+  role: 'admin',
+  pin: '8865',
+  initials: 'SA',
+  color: 'from-neutral-700 to-neutral-900',
+  active: true,
+  mustChangePin: false,
+}
+
+/** Who may administer whom. Admin outranks managers; managers only handle
+ *  front-line staff; nobody administers themselves. */
+export const canManage = (actor: Role, target: Role) =>
+  actor === 'admin' ? target !== 'admin' : actor === 'manager' ? target === 'cashier' || target === 'kitchen' : false
+
+/** Roles an actor is allowed to assign when creating/editing accounts. */
+export const assignableRoles = (actor: Role): Role[] =>
+  actor === 'admin' ? ['cashier', 'kitchen', 'manager'] : actor === 'manager' ? ['cashier', 'kitchen'] : []
+
+/** Managers and the hidden admin share the manager UI surface. */
+export const isManagerial = (r: Role) => r === 'manager' || r === 'admin'
 
 // ---------- Customers ----------
 

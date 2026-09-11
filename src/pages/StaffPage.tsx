@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { KeyRound, Pencil, Plus, ShieldCheck, ToggleLeft, ToggleRight, X } from 'lucide-react'
-import type { Role, Staff } from '../data/menu'
+import { assignableRoles, canManage, type Role, type Staff } from '../data/menu'
 
 interface StaffForm {
   id: string | null
@@ -12,6 +12,7 @@ interface StaffForm {
 const emptyForm: StaffForm = { id: null, name: '', role: 'cashier', pin: '' }
 
 const ROLE_BADGE: Record<Role, string> = {
+  admin: 'bg-neutral-800 text-white',
   manager: 'bg-violet-100 text-violet-600',
   cashier: 'bg-sky-100 text-sky-600',
   kitchen: 'bg-emerald-100 text-emerald-600',
@@ -20,15 +21,20 @@ const ROLE_BADGE: Record<Role, string> = {
 interface Props {
   staff: Staff[]
   currentUserId: string
+  currentRole: Role
   onAdd: (s: Omit<Staff, 'id' | 'initials' | 'color' | 'active' | 'mustChangePin'>) => void
   onUpdate: (id: string, patch: Partial<Staff>) => void
   onResetPin: (id: string) => string
   onToggleActive: (id: string) => void
 }
 
-export default function StaffPage({ staff, currentUserId, onAdd, onUpdate, onResetPin, onToggleActive }: Props) {
+export default function StaffPage({ staff, currentUserId, currentRole, onAdd, onUpdate, onResetPin, onToggleActive }: Props) {
   const [form, setForm] = useState<StaffForm | null>(null)
   const [tempPin, setTempPin] = useState<{ name: string; pin: string } | null>(null)
+  const roles = assignableRoles(currentRole)
+  // Nobody administers their own account; managers only handle front-line staff.
+  const mayManage = (s: Staff) => s.id !== currentUserId && canManage(currentRole, s.role)
+  const isAdmin = currentRole === 'admin'
 
   const submit = () => {
     if (!form) return
@@ -48,10 +54,11 @@ export default function StaffPage({ staff, currentUserId, onAdd, onUpdate, onRes
           <h1 className="text-[20px] font-extrabold tracking-tight">Staff Management</h1>
           <p className="text-[12px] font-medium text-neutral-400">
             {staff.filter((s) => s.active).length} active · {staff.length} total accounts
+            {isAdmin ? ' · owner access' : ' · managers can only administer cashiers and kitchen staff'}
           </p>
         </div>
         <button
-          onClick={() => setForm(emptyForm)}
+          onClick={() => setForm({ ...emptyForm, role: roles[0] ?? 'cashier' })}
           className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[12.5px] font-extrabold text-white shadow-md shadow-orange-500/25 hover:bg-primary-dark"
         >
           <Plus size={15} strokeWidth={2.6} />
@@ -102,8 +109,9 @@ export default function StaffPage({ staff, currentUserId, onAdd, onUpdate, onRes
                 </td>
                 <td className="px-5 py-3.5">
                   <button
-                    onClick={() => s.id !== currentUserId && onToggleActive(s.id)}
-                    disabled={s.id === currentUserId}
+                    onClick={() => mayManage(s) && onToggleActive(s.id)}
+                    disabled={!mayManage(s)}
+                    title={s.id === currentUserId ? "You can't deactivate yourself" : !canManage(currentRole, s.role) ? 'Only the administrator can change managers' : undefined}
                     className={`flex items-center gap-1.5 text-[11.5px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
                       s.active ? 'text-emerald-600' : 'text-neutral-400'
                     }`}
@@ -113,25 +121,31 @@ export default function StaffPage({ staff, currentUserId, onAdd, onUpdate, onRes
                   </button>
                 </td>
                 <td className="px-5 py-3.5">
-                  <div className="flex justify-end gap-1.5">
-                    <button
-                      onClick={() => setForm({ id: s.id, name: s.name, role: s.role, pin: '' })}
-                      title="Edit name / role"
-                      className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-primary hover:text-primary"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        const pin = onResetPin(s.id)
-                        setTempPin({ name: s.name, pin })
-                      }}
-                      title="Reset PIN — issues a one-time PIN"
-                      className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-amber-300 hover:text-amber-600"
-                    >
-                      <KeyRound size={13} />
-                    </button>
-                  </div>
+                  {mayManage(s) ? (
+                    <div className="flex justify-end gap-1.5">
+                      <button
+                        onClick={() => setForm({ id: s.id, name: s.name, role: s.role, pin: '' })}
+                        title="Edit name / role"
+                        className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-primary hover:text-primary"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          const pin = onResetPin(s.id)
+                          setTempPin({ name: s.name, pin })
+                        }}
+                        title="Reset PIN — issues a one-time PIN"
+                        className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-amber-300 hover:text-amber-600"
+                      >
+                        <KeyRound size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-right text-[10px] font-medium text-neutral-300">
+                      {s.id === currentUserId ? 'Forgot your PIN? Ask the administrator' : 'Administrator only'}
+                    </p>
+                  )}
                 </td>
               </tr>
             ))}
@@ -157,8 +171,8 @@ export default function StaffPage({ staff, currentUserId, onAdd, onUpdate, onRes
                 placeholder="Full name"
                 className="rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[13px] font-medium outline-none focus:border-primary"
               />
-              <div className="grid grid-cols-3 gap-2">
-                {(['cashier', 'kitchen', 'manager'] as Role[]).map((r) => (
+              <div className={`grid gap-2 ${roles.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                {roles.map((r) => (
                   <button
                     key={r}
                     onClick={() => setForm({ ...form, role: r })}

@@ -138,7 +138,7 @@ export default function DashboardPage({
             </button>
             {userMenu && (
               <div className="absolute right-0 z-30 mt-2 w-52 rounded-2xl border border-neutral-100 bg-white p-2 shadow-xl">
-                {user.role === 'manager' && (
+                {(user.role === 'manager' || user.role === 'admin') && (
                   <button
                     onClick={() => { setUserMenu(false); onOpenStaff() }}
                     className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[12.5px] font-bold text-neutral-600 hover:bg-neutral-50"

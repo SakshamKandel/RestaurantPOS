@@ -84,6 +84,7 @@ function NavButton({
 }
 
 export default function Sidebar({ view, role, userName, onNavigate, onLogout }: Props) {
+  const navRole: Role = role === 'admin' ? 'manager' : role
   return (
     <aside className="flex w-[212px] shrink-0 flex-col border-r border-neutral-200/70 bg-white px-4 py-6">
       <div className="mb-8 flex items-center gap-2.5 px-1.5">
@@ -95,7 +96,7 @@ export default function Sidebar({ view, role, userName, onNavigate, onLogout }: 
         MENU
       </p>
       <nav className="flex flex-col gap-1">
-        {MAIN_NAV.filter((n) => n.roles.includes(role)).map((item) => (
+        {MAIN_NAV.filter((n) => n.roles.includes(navRole)).map((item) => (
           <NavButton key={item.view} item={item} active={view === item.view} onNavigate={onNavigate} />
         ))}
       </nav>
@@ -104,7 +105,7 @@ export default function Sidebar({ view, role, userName, onNavigate, onLogout }: 
         ANOTHER MENU
       </p>
       <nav className="flex flex-col gap-1">
-        {OTHER_NAV.filter((n) => n.roles.includes(role)).map((item) => (
+        {OTHER_NAV.filter((n) => n.roles.includes(navRole)).map((item) => (
           <NavButton key={item.view} item={item} active={view === item.view} onNavigate={onNavigate} />
         ))}
         <button

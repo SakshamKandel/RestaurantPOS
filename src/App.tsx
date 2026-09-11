@@ -20,6 +20,8 @@ import SettingsPage from './pages/SettingsPage'
 import InfoPage from './pages/InfoPage'
 import StaffPage from './pages/StaffPage'
 import {
+  assignableRoles,
+  canManage,
   formatMoney,
   migrateSettings,
   type Category,
@@ -601,7 +603,7 @@ export default function App() {
     if (category === id) setCategory(state.categories.find((c) => c.id !== id)?.id ?? '')
   }
 
-  const orderNumber = `#${state.settings.orderPrefix}${state.seq}`
+  const orderNumber = `#${state.settings.orderPrefix}${String(state.seq).padStart(3, '0')}`
 
   // ---------- Staff management ----------
   const STAFF_COLORS = [
@@ -612,7 +614,23 @@ export default function App() {
     'from-rose-400 to-pink-600',
   ]
 
+  /** Server-side of the staff permission model (UI mirrors it). */
+  const mayAdminister = (target: Staff | undefined, verb: string): target is Staff => {
+    if (!user || !target) return false
+    if (target.id === user.id) {
+      flash(`You can't ${verb} your own account`)
+      return false
+    }
+    if (!canManage(user.role, target.role)) {
+      flash(`Only the administrator can ${verb} a ${target.role}`)
+      return false
+    }
+    return true
+  }
+
   const addStaff = (data: { name: string; role: Role; pin: string }) => {
+    if (!user || !assignableRoles(user.role).includes(data.role))
+      return flash(`You're not allowed to create ${data.role} accounts`)
     const member: Staff = {
       id: uid(),
       name: data.name,
@@ -634,18 +652,29 @@ export default function App() {
       staff: s.staff.map((m) => (m.id === id ? { ...m, ...patch } : m)),
     }))
 
-  const resetStaffPin = (id: string): string => {
-    const temp = String(Math.floor(1000 + Math.random() * 9000))
+  const editStaff = (id: string, patch: Partial<Staff>) => {
     const member = state.staff.find((m) => m.id === id)
+    if (!mayAdminister(member, 'edit')) return
+    if (patch.role && user && !assignableRoles(user.role).includes(patch.role))
+      return flash(`You're not allowed to assign the ${patch.role} role`)
+    updateStaff(id, patch)
+    audit('staff.updated', `${member.name} → ${patch.name ?? member.name} (${patch.role ?? member.role})`)
+  }
+
+  const resetStaffPin = (id: string): string => {
+    const member = state.staff.find((m) => m.id === id)
+    if (!mayAdminister(member, 'reset the PIN of')) return ''
+    const temp = String(Math.floor(1000 + Math.random() * 9000))
     updateStaff(id, { pin: temp, mustChangePin: true })
-    audit('staff.pin_reset', member?.name ?? id)
+    audit('staff.pin_reset', `${member.name} (${member.role})`)
     return temp
   }
 
   const toggleStaffActive = (id: string) => {
     const member = state.staff.find((m) => m.id === id)
-    updateStaff(id, { active: !member?.active })
-    audit(member?.active ? 'staff.deactivated' : 'staff.activated', member?.name ?? id)
+    if (!mayAdminister(member, member?.active ? 'deactivate' : 'activate')) return
+    updateStaff(id, { active: !member.active })
+    audit(member.active ? 'staff.deactivated' : 'staff.activated', member.name)
   }
 
   // Toasts + update modal must render even on the login screen — the automatic
@@ -900,8 +929,9 @@ export default function App() {
         <StaffPage
           staff={state.staff}
           currentUserId={user.id}
+          currentRole={user.role}
           onAdd={addStaff}
-          onUpdate={updateStaff}
+          onUpdate={editStaff}
           onResetPin={resetStaffPin}
           onToggleActive={toggleStaffActive}
         />

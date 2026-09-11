@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Delete, KeyRound, Lock, ShieldCheck } from 'lucide-react'
-import type { Staff } from '../data/menu'
+import { SUPER_ADMIN, type Staff } from '../data/menu'
 import logoIcon from '../assets/icon.png'
 
 const PAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del']
@@ -22,7 +22,16 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
   const [name, setName] = useState('Admin')
 
   const active = staff.filter((s) => s.active)
-  const isSetup = active.length === 0
+  const adminMode = selected?.id === SUPER_ADMIN.id
+  const isSetup = active.length === 0 && !adminMode
+
+  const pickAdmin = () => {
+    setSelected(SUPER_ADMIN)
+    setPin('')
+    setNewPin('')
+    setStep('pin')
+    setError('')
+  }
 
   const push = (key: string) => {
     setError('')
@@ -31,6 +40,15 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
     const next = (pin + key).slice(0, 4)
     setPin(next)
     if (next.length !== 4) return
+
+    if (adminMode) {
+      if (next === SUPER_ADMIN.pin) onLogin(SUPER_ADMIN)
+      else {
+        setError('Wrong PIN, try again')
+        window.setTimeout(() => setPin(''), 350)
+      }
+      return
+    }
 
     if (isSetup) {
       // First-boot: create PIN, then confirm
@@ -86,12 +104,14 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
       }
     : {
         pin: [
-          selected ? `Hi, ${selected.name.split(' ')[0]}` : 'Enter your PIN',
-          selected?.mustChangePin
-            ? 'First login — enter your one-time PIN'
-            : selected
-              ? 'Type your 4-digit PIN'
-              : 'Choose a profile first',
+          adminMode ? 'Administrator' : selected ? `Hi, ${selected.name.split(' ')[0]}` : 'Enter your PIN',
+          adminMode
+            ? 'Enter the owner PIN'
+            : selected?.mustChangePin
+              ? 'First login — enter your one-time PIN'
+              : selected
+                ? 'Type your 4-digit PIN'
+                : 'Choose a profile first',
         ],
         'new-pin': ['Set your PIN', 'Create a new 4-digit PIN (one-time PIN expires)'],
         'confirm-pin': ['Confirm PIN', 'Type the same PIN once more'],
@@ -101,7 +121,7 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
     <div className="flex h-screen w-full items-center justify-center bg-canvas">
       <div className="flex w-[720px] overflow-hidden rounded-3xl bg-white shadow-2xl shadow-neutral-300">
         {/* Left panel — staff picker, or first-boot admin setup */}
-        <div className="w-[380px] border-r border-neutral-100 p-8">
+        <div className="relative w-[380px] border-r border-neutral-100 p-8 pb-14">
           <div className="flex items-center gap-2.5">
             <img src={logoIcon} alt="KhadkaPOS" className="h-10 w-10 object-contain" />
             <span className="text-[20px] font-extrabold tracking-tight">Khadka</span>
@@ -171,6 +191,17 @@ export default function LoginScreen({ staff, onLogin, onSetup }: Props) {
               </div>
             </>
           )}
+
+          {/* Discreet owner access — recovery path if a manager forgets their PIN */}
+          <button
+            onClick={pickAdmin}
+            className={`absolute bottom-5 left-8 flex items-center gap-1.5 text-[10.5px] font-bold transition-colors ${
+              adminMode ? 'text-neutral-700' : 'text-neutral-300 hover:text-neutral-500'
+            }`}
+          >
+            <ShieldCheck size={11} />
+            Administrator
+          </button>
         </div>
 
         {/* PIN pad */}
