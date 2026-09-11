@@ -576,8 +576,59 @@ export default function App() {
     audit(member?.active ? 'staff.deactivated' : 'staff.activated', member?.name ?? id)
   }
 
+  // Toasts + update modal must render even on the login screen — the automatic
+  // update check completes before anyone logs in, so keep them out of the
+  // early-return guard.
+  const overlays = (
+    <>
+      {update && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-[400px] rounded-3xl bg-white p-7 text-center shadow-2xl">
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
+              <BadgePercent size={26} />
+            </span>
+            <p className="mt-4 text-[17px] font-extrabold">
+              Update v{update.version} is ready
+            </p>
+            <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-neutral-400">
+              {update.forced
+                ? 'The deferral window has ended — the update installs automatically. Your data was backed up first.'
+                : `Restart now to update, or keep working — this update installs automatically after ${new Date(update.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' })}.`}
+            </p>
+            <div className="mt-5 flex gap-2.5">
+              {!update.forced && (
+                <button
+                  onClick={() => setUpdate(null)}
+                  className="flex-1 rounded-xl border border-neutral-200 py-3 text-[13px] font-bold text-neutral-600 hover:bg-neutral-50"
+                >
+                  Later
+                </button>
+              )}
+              <button
+                onClick={() => installUpdate()}
+                className={`flex-1 rounded-xl py-3 text-[13px] font-extrabold text-white ${
+                  update.forced ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary-dark'
+                }`}
+              >
+                {update.forced ? 'Installing…' : 'Restart & Update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-5 py-3 text-[12.5px] font-bold text-white shadow-xl">
+          <CheckCircle2 size={16} className="text-emerald-400" />
+          {toast}
+        </div>
+      )}
+    </>
+  )
+
   if (!user)
     return (
+      <>
       <LoginScreen
         staff={state.staff}
         onSetup={(name, pin) => {
@@ -621,6 +672,8 @@ export default function App() {
           }
         }}
       />
+      {overlays}
+      </>
     )
 
   return (
@@ -824,49 +877,7 @@ export default function App() {
         />
       )}
 
-      {/* Update modal — deferrable for 3 days, then forced */}
-      {update && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-[400px] rounded-3xl bg-white p-7 text-center shadow-2xl">
-            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
-              <BadgePercent size={26} />
-            </span>
-            <p className="mt-4 text-[17px] font-extrabold">
-              Update v{update.version} is ready
-            </p>
-            <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-neutral-400">
-              {update.forced
-                ? 'The deferral window has ended — the update installs automatically. Your data was backed up first.'
-                : `Restart now to update, or keep working — this update installs automatically after ${new Date(update.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' })}.`}
-            </p>
-            <div className="mt-5 flex gap-2.5">
-              {!update.forced && (
-                <button
-                  onClick={() => setUpdate(null)}
-                  className="flex-1 rounded-xl border border-neutral-200 py-3 text-[13px] font-bold text-neutral-600 hover:bg-neutral-50"
-                >
-                  Later
-                </button>
-              )}
-              <button
-                onClick={() => installUpdate()}
-                className={`flex-1 rounded-xl py-3 text-[13px] font-extrabold text-white ${
-                  update.forced ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary-dark'
-                }`}
-              >
-                {update.forced ? 'Installing…' : 'Restart & Update'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-5 py-3 text-[12.5px] font-bold text-white shadow-xl">
-          <CheckCircle2 size={16} className="text-emerald-400" />
-          {toast}
-        </div>
-      )}
+      {overlays}
     </div>
   )
 }

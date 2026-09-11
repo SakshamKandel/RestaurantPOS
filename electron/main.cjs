@@ -139,6 +139,15 @@ function writeUpdateState(s) {
   } catch {}
 }
 
+const ulog = (m) => {
+  try {
+    fs.appendFileSync(
+      path.join(app.getPath('userData'), 'update-debug.log'),
+      `${new Date().toISOString()} ${m}\n`,
+    )
+  } catch {}
+}
+
 function preUpdateBackup() {
   try {
     const target = path.join(
@@ -153,7 +162,15 @@ autoUpdater.autoDownload = true
 autoUpdater.autoInstallOnAppQuit = false // we decide when to install
 
 function setupAutoUpdater() {
+  autoUpdater.logger = {
+    info: (m) => ulog(`info ${m}`),
+    warn: (m) => ulog(`warn ${m}`),
+    error: (m) => ulog(`error ${m}`),
+    debug: (m) => ulog(`debug ${m}`),
+  }
+
   autoUpdater.on('update-available', (info) => {
+    ulog(`update-available ${info.version}`)
     const st = readUpdateState()
     if (st.version !== info.version)
       writeUpdateState({ version: info.version, firstSeen: Date.now() })
@@ -178,15 +195,18 @@ function setupAutoUpdater() {
   })
 
   autoUpdater.on('checking-for-update', () => {
+    ulog('checking-for-update')
     mainWindow?.webContents.send('update:checking')
   })
   autoUpdater.on('update-not-available', () => {
+    ulog('update-not-available')
     mainWindow?.webContents.send('update:none', { version: app.getVersion() })
   })
   autoUpdater.on('error', (err) => {
+    ulog(`error ${err?.message ?? err}`)
     mainWindow?.webContents.send('update:error', { message: String(err?.message ?? err) })
   })
-  autoUpdater.checkForUpdates().catch(() => {})
+  autoUpdater.checkForUpdates().catch((e) => ulog(`check failed ${e?.message ?? e}`))
   setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 3600 * 1000)
 }
 
@@ -194,7 +214,21 @@ ipcMain.handle('update:install', () => {
   preUpdateBackup()
   autoUpdater.quitAndInstall()
 })
-ipcMain.handle('update:check', () => autoUpdater.checkForUpdates().catch(() => null))
+ipcMain.handle('update:check', () =>
+  Promise.race([
+    autoUpdater.checkForUpdates().catch((e) => {
+      ulog(`manual check failed ${e?.message ?? e}`)
+      return null
+    }),
+    new Promise((res) =>
+      setTimeout(() => {
+        ulog('manual check timed out')
+        mainWindow?.webContents.send('update:error', { message: 'timed out' })
+        res(null)
+      }, 15000),
+    ),
+  ]),
+)
 ipcMain.handle('app:version', () => app.getVersion())
 
 // --- Menu photos: pick a file → copy into userData/images → posimg:// URL ---
