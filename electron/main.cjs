@@ -77,6 +77,40 @@ ipcMain.handle('store:backup', (_e, data) => {
   return backupDir()
 })
 
+// --- Printers: enumerate installed Windows printers ---
+ipcMain.handle('printers:list', async (e) => {
+  const printers = await e.sender.getPrintersAsync()
+  return printers.map((p) => ({
+    name: p.name,
+    displayName: p.displayName ?? p.name,
+    description: p.description ?? '',
+    isDefault: !!p.isDefault,
+  }))
+})
+
+// --- Printers: silent print via Windows spooler (ESC/POS-like HTML) ---
+ipcMain.handle('printers:print', (_e, { deviceName, html, paperWidthMm }) => {
+  return new Promise((resolve) => {
+    const win = new BrowserWindow({ show: false })
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.print(
+        {
+          silent: true,
+          printBackground: true,
+          deviceName,
+          margins: { marginType: 'none' },
+          pageSize: { width: paperWidthMm * 1000, height: 300000 }, // microns
+        },
+        (ok, failureReason) => {
+          win.close()
+          resolve({ ok, reason: failureReason || null })
+        },
+      )
+    })
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+  })
+})
+
 app.whenReady().then(() => {
   createWindow()
   app.on('activate', () => {

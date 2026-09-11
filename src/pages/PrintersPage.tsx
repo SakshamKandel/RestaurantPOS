@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { ChefHat, Eye, FileText, Printer, RotateCcw, Wifi, X } from 'lucide-react'
-import type { PrintJob, PlacedOrder, PrinterRole } from '../store'
+import { ChefHat, Eye, FileText, Printer, RotateCcw, Wifi, WifiOff, X } from 'lucide-react'
+import type { DetectedPrinter, PrintJob, PlacedOrder, PrinterRole } from '../store'
 import type { Settings } from '../data/menu'
 
 const STATUS_BADGE: Record<PrintJob['status'], string> = {
@@ -13,13 +13,15 @@ interface Props {
   jobs: PrintJob[]
   orders: PlacedOrder[]
   settings: Settings
+  printers: DetectedPrinter[]
   onRetry: (id: string) => void
 }
 
-export default function PrintersPage({ jobs, orders, settings, onRetry }: Props) {
+export default function PrintersPage({ jobs, orders, settings, printers, onRetry }: Props) {
   const [preview, setPreview] = useState<PlacedOrder | null>(null)
+  const detected = (name: string) => printers.some((p) => p.name === name)
 
-  const printers: { role: PrinterRole; name: string; icon: typeof ChefHat; jobs: string }[] = [
+  const roles: { role: PrinterRole; name: string; icon: typeof ChefHat; jobs: string }[] = [
     { role: 'kitchen', name: settings.kitchenPrinter, icon: ChefHat, jobs: 'Kitchen tickets' },
     { role: 'billing', name: settings.billingPrinter, icon: FileText, jobs: 'Customer receipts' },
   ]
@@ -37,7 +39,7 @@ export default function PrintersPage({ jobs, orders, settings, onRetry }: Props)
 
       {/* Printer roles */}
       <div className="mt-5 grid grid-cols-2 gap-4">
-        {printers.map((p) => {
+        {roles.map((p) => {
           const Icon = p.icon
           const pending = jobs.filter((j) => j.role === p.role && j.status === 'pending').length
           const failed = jobs.filter((j) => j.role === p.role && j.status === 'failed').length
@@ -55,8 +57,15 @@ export default function PrintersPage({ jobs, orders, settings, onRetry }: Props)
                 </p>
               </div>
               <div className="text-right">
-                <span className="flex items-center gap-1.5 rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-600">
-                  <Wifi size={10} /> ONLINE
+                <span
+                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-bold ${
+                    detected(p.name)
+                      ? 'bg-emerald-100 text-emerald-600'
+                      : 'bg-neutral-100 text-neutral-400'
+                  }`}
+                >
+                  {detected(p.name) ? <Wifi size={10} /> : <WifiOff size={10} />}
+                  {detected(p.name) ? 'DETECTED' : 'SIMULATED'}
                 </span>
                 <p className="mt-1.5 text-[10px] font-bold text-neutral-400">
                   {pending} pending · {failed} failed
@@ -66,6 +75,30 @@ export default function PrintersPage({ jobs, orders, settings, onRetry }: Props)
           )
         })}
       </div>
+
+      {/* Detected printers */}
+      {printers.length > 0 && (
+        <div className="mt-4 rounded-3xl bg-white p-5 shadow-sm">
+          <p className="text-[13px] font-extrabold">Detected on this PC</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {printers.map((p) => (
+              <span
+                key={p.name}
+                className="flex items-center gap-2 rounded-full border border-neutral-200 px-3.5 py-1.5 text-[11.5px] font-bold text-neutral-600"
+              >
+                <Printer size={12} className="text-neutral-400" />
+                {p.displayName}
+                {p.isDefault && (
+                  <span className="rounded bg-primary-soft px-1.5 py-0.5 text-[9px] font-bold text-primary">DEFAULT</span>
+                )}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-[10.5px] font-medium text-neutral-400">
+            Assign a detected printer in Settings → Thermal Printers to print real tickets and receipts.
+          </p>
+        </div>
+      )}
 
       {/* Job queue */}
       <div className="mt-4 overflow-hidden rounded-3xl bg-white shadow-sm">

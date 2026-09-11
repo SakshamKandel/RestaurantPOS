@@ -27,10 +27,13 @@ import {
 } from './data/menu'
 import {
   backupNow,
+  detectPrinters,
   initialState,
   loadPersisted,
   persist,
+  printDocument,
   timeAgo,
+  type DetectedPrinter,
   type DocType,
   type HeldOrder,
   type MovementType,
@@ -41,6 +44,7 @@ import {
   type PrinterRole,
   type Shift,
 } from './store'
+import { kickHtml, kitchenHtml, receiptHtml, testHtml } from './print/docs'
 import type { DisplayOrder } from './components/OrderLine'
 
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -71,6 +75,12 @@ export default function App() {
   const [payOpen, setPayOpen] = useState(false)
   const [receipt, setReceipt] = useState<PlacedOrder | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [printers, setPrinters] = useState<DetectedPrinter[]>([])
+
+  const refreshPrinters = () => detectPrinters().then(setPrinters)
+  useEffect(() => {
+    refreshPrinters()
+  }, [])
 
   // Load persisted state once
   useEffect(() => {
@@ -108,24 +118,49 @@ export default function App() {
       ].slice(0, 200),
     }))
 
-  // ---------- Print queue (simulated thermal printers) ----------
-  const enqueueJobs = (orderNumber: string, extra: PrintJob[] = []) => {
+  // ---------- Print queue → real printers when detected, simulated otherwise ----------
+  const markJob = (id: string, status: PrintJob['status']) =>
+    setState((s) => ({
+      ...s,
+      printJobs: s.printJobs.map((j) => (j.id === id ? { ...j, status } : j)),
+    }))
+
+  const processJob = (job: PrintJob, order?: PlacedOrder) => {
+    const s = state.settings
+    const deviceName = job.role === 'kitchen' ? s.kitchenPrinter : s.billingPrinter
+    const html =
+      job.docType === 'KITCHEN TICKET' && order
+        ? kitchenHtml(order, s)
+        : job.docType === 'RECEIPT' && order
+          ? receiptHtml(order, s, job.copy)
+          : job.docType === 'TEST'
+            ? testHtml(job.role, s)
+            : kickHtml(s)
+
+    const detected = printers.some((p) => p.name === deviceName)
+    const real = detected ? printDocument(deviceName, html, Number(s.paperWidth)) : null
+
+    if (real) {
+      real
+        .then((res) => markJob(job.id, res.ok ? 'printed' : 'failed'))
+        .catch(() => markJob(job.id, 'failed'))
+    } else {
+      // no matching physical printer — simulate spooler accept
+      window.setTimeout(
+        () => markJob(job.id, 'printed'),
+        job.role === 'kitchen' ? 900 : 1500,
+      )
+    }
+  }
+
+  const enqueueJobs = (order: PlacedOrder, extra: PrintJob[] = []) => {
     const jobs: PrintJob[] = [
-      { id: uid(), orderNumber, docType: 'KITCHEN TICKET', role: 'kitchen', status: 'pending', copy: false, createdAt: Date.now() },
-      { id: uid(), orderNumber, docType: 'RECEIPT', role: 'billing', status: 'pending', copy: false, createdAt: Date.now() },
+      { id: uid(), orderNumber: order.number, docType: 'KITCHEN TICKET', role: 'kitchen', status: 'pending', copy: false, createdAt: Date.now() },
+      { id: uid(), orderNumber: order.number, docType: 'RECEIPT', role: 'billing', status: 'pending', copy: false, createdAt: Date.now() },
       ...extra,
     ]
     setState((s) => ({ ...s, printJobs: [...jobs, ...s.printJobs] }))
-    jobs.forEach((j) => {
-      window.setTimeout(() => {
-        setState((s) => ({
-          ...s,
-          printJobs: s.printJobs.map((p) =>
-            p.id === j.id ? { ...p, status: 'printed' } : p,
-          ),
-        }))
-      }, j.role === 'kitchen' ? 900 : 1500)
-    })
+    jobs.forEach((j) => processJob(j, order))
   }
 
   const queueJob = (docType: DocType, role: PrinterRole, orderNumber = '—') => {
@@ -139,12 +174,7 @@ export default function App() {
       createdAt: Date.now(),
     }
     setState((s) => ({ ...s, printJobs: [job, ...s.printJobs] }))
-    window.setTimeout(() => {
-      setState((s) => ({
-        ...s,
-        printJobs: s.printJobs.map((j) => (j.id === job.id ? { ...j, status: 'printed' } : j)),
-      }))
-    }, 1100)
+    processJob(job)
   }
 
   const openDrawer = (reason: string) => {
@@ -164,16 +194,11 @@ export default function App() {
   }
 
   const retryJob = (id: string) => {
-    setState((s) => ({
-      ...s,
-      printJobs: s.printJobs.map((j) => (j.id === id ? { ...j, status: 'pending' } : j)),
-    }))
-    window.setTimeout(() => {
-      setState((s) => ({
-        ...s,
-        printJobs: s.printJobs.map((j) => (j.id === id ? { ...j, status: 'printed' } : j)),
-      }))
-    }, 1200)
+    const job = state.printJobs.find((j) => j.id === id)
+    if (!job) return
+    const order = state.orders.find((o) => o.number === job.orderNumber)
+    markJob(id, 'pending')
+    processJob(job, order)
   }
 
   const reprintReceipt = (o: PlacedOrder) => {
@@ -187,12 +212,7 @@ export default function App() {
       createdAt: Date.now(),
     }
     setState((s) => ({ ...s, printJobs: [job, ...s.printJobs] }))
-    window.setTimeout(() => {
-      setState((s) => ({
-        ...s,
-        printJobs: s.printJobs.map((j) => (j.id === job.id ? { ...j, status: 'printed' } : j)),
-      }))
-    }, 1000)
+    processJob(job, o)
     flash(`COPY receipt queued → ${state.settings.billingPrinter}`)
   }
 
@@ -278,7 +298,7 @@ export default function App() {
       method === 'cash' && state.settings.drawerOnCash && state.settings.cashDrawer
         ? [{ id: uid(), orderNumber: order.number, docType: 'DRAWER KICK', role: 'billing', status: 'pending', copy: false, createdAt: Date.now() }]
         : []
-    enqueueJobs(order.number, kick) // kitchen ticket → chef printer, receipt (+drawer kick) → billing printer
+    enqueueJobs(order, kick) // kitchen ticket → chef printer, receipt (+drawer kick) → billing printer
     audit('order.completed', `${order.number} · ${method} · ${(total / 100).toFixed(2)}`)
     setCart({})
     setPayOpen(false)
@@ -501,6 +521,7 @@ export default function App() {
           jobs={state.printJobs}
           orders={state.orders}
           settings={state.settings}
+          printers={printers}
           onRetry={retryJob}
         />
       )}
@@ -539,6 +560,8 @@ export default function App() {
       {view === 'settings' && (
         <SettingsPage
           settings={state.settings}
+          printers={printers}
+          onRefreshPrinters={refreshPrinters}
           onChange={(settings) => setState((s) => ({ ...s, settings }))}
           onSaved={() => {
             audit('settings.saved', 'store/device configuration updated')
@@ -553,6 +576,7 @@ export default function App() {
           settings={state.settings}
           orderCount={state.orders.length}
           audit={state.audit}
+          printers={printers}
           onBackup={() =>
             backupNow(state).then((f) => {
               audit('backup.created', f ?? 'unknown location')

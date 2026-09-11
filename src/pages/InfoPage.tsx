@@ -1,19 +1,21 @@
 import { DatabaseBackup, HardDrive, Info, Printer, ScrollText, Soup, Vault, WifiOff } from 'lucide-react'
 import type { Settings } from '../data/menu'
-import type { AuditEvent } from '../store'
+import type { AuditEvent, DetectedPrinter } from '../store'
 
 interface Props {
   settings: Settings
   orderCount: number
   audit: AuditEvent[]
+  printers: DetectedPrinter[]
   onBackup: () => void
 }
 
-export default function InfoPage({ settings, orderCount, audit, onBackup }: Props) {
+export default function InfoPage({ settings, orderCount, audit, printers, onBackup }: Props) {
+  const detected = (name: string) => printers.some((p) => p.name === name)
   const health = [
     { label: 'Local database', detail: `${orderCount} orders · auto-backup on every change`, ok: true, icon: HardDrive },
-    { label: 'Kitchen printer', detail: `${settings.kitchenPrinter} · ${settings.kitchenAddress}`, ok: true, icon: Printer },
-    { label: 'Billing printer', detail: `${settings.billingPrinter} · ${settings.billingAddress}`, ok: true, icon: Printer },
+    { label: 'Kitchen printer', detail: `${settings.kitchenPrinter} · ${settings.kitchenAddress}`, ok: detected(settings.kitchenPrinter), icon: Printer },
+    { label: 'Billing printer', detail: `${settings.billingPrinter} · ${settings.billingAddress}`, ok: detected(settings.billingPrinter), icon: Printer },
     { label: 'Cash drawer', detail: settings.cashDrawer ? `RJ11 kick on billing printer · ${settings.paperWidth}mm` : 'Disabled in Settings', ok: settings.cashDrawer, icon: Vault },
     { label: 'Internet', detail: 'Offline mode — selling works regardless', ok: false, icon: WifiOff },
   ]

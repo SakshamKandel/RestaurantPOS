@@ -118,10 +118,24 @@ export const initialState: PosState = {
 
 // ---------- Persistence (Electron IPC, localStorage fallback) ----------
 
+export interface DetectedPrinter {
+  name: string
+  displayName: string
+  description: string
+  isDefault: boolean
+}
+
+export interface PrintResult {
+  ok: boolean
+  reason: string | null
+}
+
 interface PosBridge {
   loadStore: () => Promise<PosState | null>
   saveStore: (s: PosState) => Promise<boolean>
   backup: (s: PosState) => Promise<string>
+  listPrinters?: () => Promise<DetectedPrinter[]>
+  printDoc?: (p: { deviceName: string; html: string; paperWidthMm: number }) => Promise<PrintResult>
 }
 
 const bridge = (window as unknown as { pos?: PosBridge }).pos
@@ -150,6 +164,23 @@ export function backupNow(state: PosState): Promise<string | null> {
   if (bridge?.backup) return bridge.backup(state)
   localStorage.setItem(`${LS_KEY}-backup`, JSON.stringify(state))
   return Promise.resolve('localStorage backup')
+}
+
+export async function detectPrinters(): Promise<DetectedPrinter[]> {
+  try {
+    return (await bridge?.listPrinters?.()) ?? []
+  } catch {
+    return []
+  }
+}
+
+export function printDocument(
+  deviceName: string,
+  html: string,
+  paperWidthMm: number,
+): Promise<PrintResult> | null {
+  if (!bridge?.printDoc) return null
+  return bridge.printDoc({ deviceName, html, paperWidthMm })
 }
 
 export function timeAgo(ts: number): string {

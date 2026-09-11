@@ -1,9 +1,11 @@
-import { Building2, Percent, Printer, Save, Vault } from 'lucide-react'
-import type { PrinterRole } from '../store'
+import { Building2, Percent, Printer, RefreshCw, Save, Vault } from 'lucide-react'
+import type { DetectedPrinter, PrinterRole } from '../store'
 import type { Settings } from '../data/menu'
 
 interface Props {
   settings: Settings
+  printers: DetectedPrinter[]
+  onRefreshPrinters: () => void
   onChange: (s: Settings) => void
   onSaved: () => void
   onTestPrint: (role: PrinterRole) => void
@@ -69,7 +71,53 @@ function Toggle({
   )
 }
 
-export default function SettingsPage({ settings, onChange, onSaved, onTestPrint, onOpenDrawer }: Props) {
+function PrinterPicker({
+  label,
+  nameValue,
+  addrValue,
+  printers,
+  onName,
+  onAddr,
+}: {
+  label: string
+  nameValue: string
+  addrValue: string
+  printers: DetectedPrinter[]
+  onName: (v: string) => void
+  onAddr: (v: string) => void
+}) {
+  const detected = printers.some((p) => p.name === nameValue)
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <label className="block">
+        <span className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-500">
+          {label}
+          {detected && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Detected" />}
+        </span>
+        <select
+          value={detected ? nameValue : '__manual'}
+          onChange={(e) => {
+            if (e.target.value !== '__manual') onName(e.target.value)
+          }}
+          className="mt-1 w-full cursor-pointer rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[12.5px] font-medium outline-none focus:border-primary"
+        >
+          <option value="__manual" disabled>
+            {printers.length ? '— Select detected printer —' : '— No printers detected —'}
+          </option>
+          {printers.map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.displayName}
+              {p.isDefault ? ' (default)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+      <Field label="Name / address / port" value={detected ? addrValue : nameValue} onChange={detected ? onAddr : onName} />
+    </div>
+  )
+}
+
+export default function SettingsPage({ settings, printers, onRefreshPrinters, onChange, onSaved, onTestPrint, onOpenDrawer }: Props) {
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) =>
     onChange({ ...settings, [k]: v })
 
@@ -128,18 +176,35 @@ export default function SettingsPage({ settings, onChange, onSaved, onTestPrint,
 
           {/* Printers */}
           <section className="rounded-3xl bg-white p-5 shadow-sm">
-            <p className="flex items-center gap-2 text-[13px] font-extrabold">
-              <Printer size={15} className="text-primary" /> Thermal Printers
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="flex items-center gap-2 text-[13px] font-extrabold">
+                <Printer size={15} className="text-primary" /> Thermal Printers
+              </p>
+              <button
+                onClick={onRefreshPrinters}
+                className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[10.5px] font-bold text-neutral-500 hover:border-primary hover:text-primary"
+              >
+                <RefreshCw size={11} />
+                {printers.length} detected
+              </button>
+            </div>
             <div className="mt-4 flex flex-col gap-3.5">
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Kitchen printer name" value={settings.kitchenPrinter} onChange={(v) => set('kitchenPrinter', v)} />
-                <Field label="Address / port" value={settings.kitchenAddress} onChange={(v) => set('kitchenAddress', v)} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Billing printer name" value={settings.billingPrinter} onChange={(v) => set('billingPrinter', v)} />
-                <Field label="Address / port" value={settings.billingAddress} onChange={(v) => set('billingAddress', v)} />
-              </div>
+              <PrinterPicker
+                label="Kitchen printer"
+                nameValue={settings.kitchenPrinter}
+                addrValue={settings.kitchenAddress}
+                printers={printers}
+                onName={(v) => set('kitchenPrinter', v)}
+                onAddr={(v) => set('kitchenAddress', v)}
+              />
+              <PrinterPicker
+                label="Billing printer"
+                nameValue={settings.billingPrinter}
+                addrValue={settings.billingAddress}
+                printers={printers}
+                onName={(v) => set('billingPrinter', v)}
+                onAddr={(v) => set('billingAddress', v)}
+              />
               <div className="flex items-center gap-3">
                 <label className="block flex-1">
                   <span className="text-[11px] font-bold text-neutral-500">Paper width</span>
