@@ -7,6 +7,7 @@ import {
   Printer,
   Settings,
   Soup,
+  UserCog,
   Users,
   UtensilsCrossed,
   Vault,
@@ -22,6 +23,7 @@ export type View =
   | 'transactions'
   | 'printers'
   | 'shift'
+  | 'staff'
   | 'settings'
   | 'info'
 
@@ -43,6 +45,7 @@ const MAIN_NAV: NavItem[] = [
 ]
 
 const OTHER_NAV: { view: View; label: string; icon: LucideIcon; roles: Role[] }[] = [
+  { view: 'staff', label: 'Staff', icon: UserCog, roles: ['manager'] },
   { view: 'settings', label: 'Settings', icon: Settings, roles: ['manager'] },
   { view: 'info', label: 'Info', icon: Info, roles: ['cashier', 'kitchen', 'manager'] },
 ]

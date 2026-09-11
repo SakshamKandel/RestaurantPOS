@@ -105,12 +105,15 @@ export interface Staff {
   pin: string
   initials: string
   color: string
+  active: boolean
+  /** True for first-boot accounts — PIN is a one-time password that must be replaced. */
+  mustChangePin: boolean
 }
 
 export const STAFF: Staff[] = [
-  { id: 's1', name: 'Gilang Febrian', role: 'cashier', pin: '1234', initials: 'GF', color: 'from-amber-400 to-orange-500' },
-  { id: 's2', name: 'Rina Sato', role: 'manager', pin: '9999', initials: 'RS', color: 'from-violet-400 to-purple-600' },
-  { id: 's3', name: 'Kenji Mori', role: 'kitchen', pin: '5555', initials: 'KM', color: 'from-emerald-400 to-teal-600' },
+  { id: 's2', name: 'Rina Sato', role: 'manager', pin: '0000', initials: 'RS', color: 'from-violet-400 to-purple-600', active: true, mustChangePin: true },
+  { id: 's1', name: 'Gilang Febrian', role: 'cashier', pin: '1234', initials: 'GF', color: 'from-amber-400 to-orange-500', active: true, mustChangePin: false },
+  { id: 's3', name: 'Kenji Mori', role: 'kitchen', pin: '5555', initials: 'KM', color: 'from-emerald-400 to-teal-600', active: true, mustChangePin: false },
 ]
 
 // ---------- Customers ----------

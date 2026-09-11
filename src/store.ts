@@ -2,10 +2,12 @@ import {
   DEFAULT_SETTINGS,
   MENU_ITEMS,
   SEED_CUSTOMERS,
+  STAFF,
   type Cents,
   type Customer,
   type MenuItem,
   type Settings,
+  type Staff,
 } from './data/menu'
 import type { PaymentMethod } from './components/OrderPanel'
 
@@ -102,6 +104,7 @@ export interface PosState {
   seq: number
   shifts: Shift[]
   audit: AuditEvent[]
+  staff: Staff[]
 }
 
 export const initialState: PosState = {
@@ -114,6 +117,7 @@ export const initialState: PosState = {
   seq: 935,
   shifts: [],
   audit: [],
+  staff: STAFF,
 }
 
 // ---------- Persistence (Electron IPC, localStorage fallback) ----------

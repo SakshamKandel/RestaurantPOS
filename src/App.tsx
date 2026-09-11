@@ -17,12 +17,14 @@ import TransactionsPage from './pages/TransactionsPage'
 import ReportPage from './pages/ReportPage'
 import SettingsPage from './pages/SettingsPage'
 import InfoPage from './pages/InfoPage'
+import StaffPage from './pages/StaffPage'
 import {
   LINE_ORDERS,
   type CategoryId,
   type Customer,
   type MenuItem,
   type OrderStatus,
+  type Role,
   type Staff,
 } from './data/menu'
 import {
@@ -426,18 +428,71 @@ export default function App() {
 
   const orderNumber = `#${state.settings.orderPrefix}${state.seq}`
 
+  // ---------- Staff management ----------
+  const STAFF_COLORS = [
+    'from-amber-400 to-orange-500',
+    'from-violet-400 to-purple-600',
+    'from-emerald-400 to-teal-600',
+    'from-sky-400 to-blue-600',
+    'from-rose-400 to-pink-600',
+  ]
+
+  const addStaff = (data: { name: string; role: Role; pin: string }) => {
+    const member: Staff = {
+      id: uid(),
+      name: data.name,
+      role: data.role,
+      pin: data.pin,
+      initials: data.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
+      color: STAFF_COLORS[state.staff.length % STAFF_COLORS.length],
+      active: true,
+      mustChangePin: false,
+    }
+    setState((s) => ({ ...s, staff: [...s.staff, member] }))
+    audit('staff.added', `${member.name} (${member.role})`)
+    flash(`${member.name} added as ${member.role}`)
+  }
+
+  const updateStaff = (id: string, patch: Partial<Staff>) =>
+    setState((s) => ({
+      ...s,
+      staff: s.staff.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    }))
+
+  const resetStaffPin = (id: string): string => {
+    const temp = String(Math.floor(1000 + Math.random() * 9000))
+    const member = state.staff.find((m) => m.id === id)
+    updateStaff(id, { pin: temp, mustChangePin: true })
+    audit('staff.pin_reset', member?.name ?? id)
+    return temp
+  }
+
+  const toggleStaffActive = (id: string) => {
+    const member = state.staff.find((m) => m.id === id)
+    updateStaff(id, { active: !member?.active })
+    audit(member?.active ? 'staff.deactivated' : 'staff.activated', member?.name ?? id)
+  }
+
   if (!user)
     return (
       <LoginScreen
-        onLogin={(s) => {
-          setUser(s)
+        staff={state.staff}
+        onLogin={(s, newPin) => {
+          const firstSetup = !!newPin
+          const member = newPin ? { ...s, pin: newPin, mustChangePin: false } : s
+          if (newPin) updateStaff(s.id, { pin: newPin, mustChangePin: false })
+          setUser(member)
           setState((st) => ({
             ...st,
             audit: [
-              { id: uid(), at: Date.now(), actor: s.name, action: 'auth.login', detail: `${s.role} signed in` },
+              { id: uid(), at: Date.now(), actor: member.name, action: 'auth.login', detail: `${member.role} signed in${firstSetup ? ' (PIN set)' : ''}` },
               ...st.audit,
             ].slice(0, 200),
           }))
+          if (firstSetup && member.role === 'manager') {
+            setView('staff')
+            flash('PIN saved — now add your staff')
+          }
         }}
       />
     )
@@ -557,6 +612,16 @@ export default function App() {
         />
       )}
       {view === 'report' && <ReportPage orders={state.orders} />}
+      {view === 'staff' && (
+        <StaffPage
+          staff={state.staff}
+          currentUserId={user.id}
+          onAdd={addStaff}
+          onUpdate={updateStaff}
+          onResetPin={resetStaffPin}
+          onToggleActive={toggleStaffActive}
+        />
+      )}
       {view === 'settings' && (
         <SettingsPage
           settings={state.settings}
