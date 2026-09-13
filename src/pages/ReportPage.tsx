@@ -24,6 +24,7 @@ import {
   type Settings,
 } from '../data/menu'
 import { exportCsv, type OrderLineSnap, type OrderType, type PlacedOrder } from '../store'
+import { bizDayCutoffMs, businessDayOf } from '../bizday'
 
 /** Payment components of an order — split-aware, legacy-fallback. */
 const paymentsOf = (o: PlacedOrder) =>
@@ -194,12 +195,9 @@ export default function ReportPage({ orders, menu, categories, settings }: Props
 
   // Business-day cutoff: sales before this hour belong to the previous day.
   const cutoffH = Math.min(23, Math.max(0, settings.businessDayCutoff ?? 0))
-  const cutoffMs = cutoffH * 3600_000
+  const cutoffMs = bizDayCutoffMs(cutoffH)
   /** Local midnight of the business day a timestamp belongs to. */
-  const bizDateOf = (ts: number) => {
-    const d = new Date(ts - cutoffMs)
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  }
+  const bizDateOf = (ts: number) => new Date(businessDayOf(ts, cutoffH))
   const bizStart = (d: Date) => d.getTime() + cutoffMs
   const todayBiz = bizDateOf(Date.now())
 

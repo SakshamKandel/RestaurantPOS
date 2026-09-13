@@ -77,6 +77,7 @@ import {
   type UpdateInfo,
 } from './store'
 import { kitchenHtml, receiptHtml, testHtml } from './print/docs'
+import { isCurrentBusinessDay } from './bizday'
 import type { DisplayOrder } from './components/OrderLine'
 import type { CartMap } from './components/MenuSection'
 
@@ -489,12 +490,9 @@ export default function App() {
     return n
   }, [state.printJobs, state.shifts, state.audit, state.menu, user])
 
+  const bizCutoff = state.settings.businessDayCutoff ?? 0
   const todaySales = state.orders
-    .filter(
-      (o) =>
-        o.status !== 'refunded' &&
-        new Date(o.createdAt).toDateString() === new Date().toDateString(),
-    )
+    .filter((o) => o.status !== 'refunded' && isCurrentBusinessDay(o.createdAt, bizCutoff))
     .reduce((s, o) => s + o.total, 0)
 
   const itemCounts = useMemo(() => {
@@ -511,9 +509,9 @@ export default function App() {
     return state.menu.filter((m) => m.category === category)
   }, [category, query, state.menu])
 
-  // ---------- Order line strip (seeded + live orders) ----------
+  // ---------- Order line strip — current business day only ----------
   const liveLineOrders: DisplayOrder[] = state.orders
-    .filter((o) => o.status !== 'refunded')
+    .filter((o) => o.status !== 'refunded' && isCurrentBusinessDay(o.createdAt, bizCutoff))
     .map((o) => ({
       number: o.number.replace('#', ''),
       tag: TYPE_LABEL[o.type],
