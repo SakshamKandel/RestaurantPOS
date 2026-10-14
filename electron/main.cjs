@@ -419,9 +419,9 @@ ipcMain.handle('update:check', () => {
       .then((r) => {
         if (!r) return { status: 'error', message: 'no result' }
         const latest = r.updateInfo?.version
-        const isNewer = latest && latest !== app.getVersion()
-        ulog(`manual check result latest=${latest} newer=${isNewer}`)
-        return isNewer
+        const isAvailable = r.isUpdateAvailable
+        ulog(`manual check result latest=${latest} available=${isAvailable}`)
+        return isAvailable
           ? { status: 'found', version: latest }
           : { status: 'none', version: app.getVersion() }
       })

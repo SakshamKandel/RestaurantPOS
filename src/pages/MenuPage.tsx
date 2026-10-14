@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { FolderCog, ImagePlus, Package, Pencil, Plus, Search, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react'
+import { FolderCog, ImagePlus, Package, Pencil, Plus, Search, SlidersHorizontal, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react'
 import { pickImage } from '../store'
+import ModifierGroupsEditor from '../components/ModifierGroupsEditor'
+import ItemModifiersModal from '../components/ItemModifiersModal'
 import {
   formatMoney,
   ICONS,
@@ -12,8 +14,6 @@ import {
   type ModifierGroup,
   type TaxClass,
 } from '../data/menu'
-
-const uid = () => Math.random().toString(36).slice(2, 9)
 
 interface ItemForm {
   id: string | null
@@ -62,6 +62,7 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
   const [query, setQuery] = useState('')
   const [catFilter, setCatFilter] = useState<CategoryId | 'all'>('all')
   const [form, setForm] = useState<ItemForm | null>(null)
+  const [modifierItemId, setModifierItemId] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [catManager, setCatManager] = useState(false)
   const [catForm, setCatForm] = useState<{ id: string | null; label: string; icon: IconName } | null>(null)
@@ -75,6 +76,14 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
 
   const catLabel = (id: CategoryId) => categories.find((c) => c.id === id)?.label ?? id
   const catItemCount = (id: CategoryId) => menu.filter((m) => m.category === id).length
+  const modifierItem = menu.find((m) => m.id === modifierItemId)
+  const modifierSummary = (item: MenuItem) => {
+    const groups = item.modifiers ?? []
+    const options = groups.reduce((n, group) => n + group.options.length, 0)
+    return groups.length
+      ? `${groups.length} group${groups.length === 1 ? '' : 's'} · ${options} option${options === 1 ? '' : 's'}`
+      : 'No modifiers'
+  }
 
   const openEdit = (m: MenuItem) =>
     setForm({
@@ -118,9 +127,6 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
     })
     setForm(null)
   }
-
-  const setGroup = (gi: number, patch: Partial<ModifierGroup>) =>
-    setForm((f) => f && ({ ...f, modifiers: f.modifiers.map((g, i) => (i === gi ? { ...g, ...patch } : g)) }))
 
   return (
     <div className="thin-scroll flex-1 overflow-y-auto px-6 pb-6">
@@ -188,6 +194,7 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
               <th className="px-5 py-3.5">Price</th>
               <th className="px-5 py-3.5">Stock</th>
               <th className="px-5 py-3.5">Availability</th>
+              <th className="px-5 py-3.5">Modifiers</th>
               <th className="px-5 py-3.5 text-right">Actions</th>
             </tr>
           </thead>
@@ -248,9 +255,24 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
                   </button>
                 </td>
                 <td className="px-5 py-3">
+                  <button
+                    onClick={() => setModifierItemId(m.id)}
+                    aria-label={`Modifiers for ${m.name}`}
+                    className="flex flex-col items-start gap-1 rounded-xl border border-neutral-200 px-3 py-2 text-left transition-colors hover:border-primary hover:bg-primary-soft"
+                  >
+                    <span className="flex items-center gap-1.5 text-[11.5px] font-extrabold text-neutral-600">
+                      <SlidersHorizontal size={13} /> Modifiers
+                    </span>
+                    <span className="whitespace-nowrap text-[10px] font-medium text-neutral-400">
+                      {modifierSummary(m)}
+                    </span>
+                  </button>
+                </td>
+                <td className="px-5 py-3">
                   <div className="flex justify-end gap-1.5">
                     <button
                       onClick={() => openEdit(m)}
+                      aria-label={`Edit ${m.name}`}
                       className="rounded-lg border border-neutral-200 p-1.5 text-neutral-500 transition-colors hover:border-primary hover:text-primary"
                     >
                       <Pencil size={13} />
@@ -283,6 +305,19 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
           </p>
         )}
       </div>
+
+      {modifierItem && (
+        <ItemModifiersModal
+          key={modifierItem.id}
+          item={modifierItem}
+          onClose={() => setModifierItemId(null)}
+          onSave={(modifiers) => {
+            const latest = menu.find((m) => m.id === modifierItemId)
+            if (latest) onSave({ ...latest, modifiers })
+            setModifierItemId(null)
+          }}
+        />
+      )}
 
       {/* Add / Edit modal */}
       {form && (
@@ -408,96 +443,10 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
               </div>
 
               {/* Modifier groups */}
-              <div className="rounded-2xl bg-neutral-50 p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11.5px] font-extrabold text-neutral-500">Modifiers / add-ons</p>
-                  <button
-                    onClick={() =>
-                      setForm({
-                        ...form,
-                        modifiers: [
-                          ...form.modifiers,
-                          { id: uid(), name: '', required: false, multi: false, options: [] },
-                        ],
-                      })
-                    }
-                    className="flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary-dark"
-                  >
-                    <Plus size={13} strokeWidth={3} /> Add group
-                  </button>
-                </div>
-                {form.modifiers.map((g, gi) => (
-                  <div key={g.id} className="mt-3 rounded-xl border border-neutral-200 bg-white p-3">
-                    <div className="flex items-center gap-2">
-                      <input
-                        value={g.name}
-                        onChange={(e) => setGroup(gi, { name: e.target.value })}
-                        placeholder="Group (e.g. Size, Extras)"
-                        className="flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[12px] font-bold outline-none focus:border-primary"
-                      />
-                      <button
-                        onClick={() => setGroup(gi, { required: !g.required })}
-                        title="Customer must pick at least one option"
-                        className={`rounded-lg px-2 py-1.5 text-[10px] font-bold ${g.required ? 'bg-primary-soft text-primary' : 'bg-neutral-100 text-neutral-400'}`}
-                      >
-                        Req
-                      </button>
-                      <button
-                        onClick={() => setGroup(gi, { multi: !g.multi })}
-                        title="Multi-select vs pick-one"
-                        className={`rounded-lg px-2 py-1.5 text-[10px] font-bold ${g.multi ? 'bg-primary-soft text-primary' : 'bg-neutral-100 text-neutral-400'}`}
-                      >
-                        Multi
-                      </button>
-                      <button
-                        onClick={() => setForm({ ...form, modifiers: form.modifiers.filter((_, i) => i !== gi) })}
-                        className="rounded-lg p-1.5 text-neutral-300 hover:text-red-500"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                    {g.options.map((o, oi) => (
-                      <div key={o.id} className="mt-2 flex items-center gap-2">
-                        <input
-                          value={o.name}
-                          onChange={(e) =>
-                            setGroup(gi, { options: g.options.map((x, i) => (i === oi ? { ...x, name: e.target.value } : x)) })
-                          }
-                          placeholder="Option name"
-                          className="flex-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[11.5px] font-medium outline-none focus:border-primary"
-                        />
-                        <input
-                          value={o.price === 0 ? '' : (o.price / 100).toString()}
-                          onChange={(e) => {
-                            const v = Math.round(parseFloat(e.target.value || '0') * 100)
-                            setGroup(gi, { options: g.options.map((x, i) => (i === oi ? { ...x, price: Number.isNaN(v) ? 0 : Math.max(0, v) } : x)) })
-                          }}
-                          placeholder="+0.00"
-                          inputMode="decimal"
-                          className="w-20 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-right text-[11.5px] font-medium outline-none focus:border-primary"
-                        />
-                        <button
-                          onClick={() => setGroup(gi, { options: g.options.filter((_, i) => i !== oi) })}
-                          className="rounded-lg p-1 text-neutral-300 hover:text-red-500"
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => setGroup(gi, { options: [...g.options, { id: uid(), name: '', price: 0 }] })}
-                      className="mt-2 flex items-center gap-1 text-[10.5px] font-bold text-neutral-400 hover:text-primary"
-                    >
-                      <Plus size={12} strokeWidth={3} /> Add option
-                    </button>
-                  </div>
-                ))}
-                {form.modifiers.length === 0 && (
-                  <p className="mt-2 text-[10.5px] font-medium text-neutral-400">
-                    e.g. Size (Small/Large), Extras (extra cheese +$1.50)
-                  </p>
-                )}
-              </div>
+              <ModifierGroupsEditor
+                groups={form.modifiers}
+                onChange={(modifiers) => setForm((f) => f && ({ ...f, modifiers }))}
+              />
             </div>
             <button
               onClick={submit}

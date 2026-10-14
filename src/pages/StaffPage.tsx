@@ -27,13 +27,15 @@ interface Props {
   onResetPin: (id: string) => string
   onToggleActive: (id: string) => void
   /** Change the hidden administrator's own PIN (admin only). */
-  onAdminPin?: (pin: string) => void
+  onAdminPin?: (pin: string) => Promise<void>
 }
 
 export default function StaffPage({ staff, currentUserId, currentRole, onAdd, onUpdate, onResetPin, onToggleActive, onAdminPin }: Props) {
   const [form, setForm] = useState<StaffForm | null>(null)
   const [tempPin, setTempPin] = useState<{ name: string; pin: string } | null>(null)
   const [adminPins, setAdminPins] = useState<{ a: string; b: string } | null>(null)
+  const [adminPinSaving, setAdminPinSaving] = useState(false)
+  const [adminPinError, setAdminPinError] = useState('')
   const roles = assignableRoles(currentRole)
   // Nobody administers their own account; managers only handle front-line staff.
   const mayManage = (s: Staff) => s.id !== currentUserId && canManage(currentRole, s.role)
@@ -48,6 +50,20 @@ export default function StaffPage({ staff, currentUserId, currentRole, onAdd, on
       onAdd({ name: form.name.trim(), role: form.role, pin: form.pin })
     }
     setForm(null)
+  }
+
+  const saveAdminPin = async () => {
+    if (!adminPins || !onAdminPin || adminPinSaving || !/^\d{4,6}$/.test(adminPins.a) || adminPins.a !== adminPins.b) return
+    setAdminPinSaving(true)
+    setAdminPinError('')
+    try {
+      await onAdminPin(adminPins.a)
+      setAdminPins(null)
+    } catch (error) {
+      setAdminPinError(error instanceof Error ? error.message : 'Could not save administrator PIN. Try again.')
+    } finally {
+      setAdminPinSaving(false)
+    }
   }
 
   return (
@@ -78,7 +94,10 @@ export default function StaffPage({ staff, currentUserId, currentRole, onAdd, on
             </p>
           </div>
           <button
-            onClick={() => setAdminPins({ a: '', b: '' })}
+            onClick={() => {
+              setAdminPinError('')
+              setAdminPins({ a: '', b: '' })
+            }}
             className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-[12px] font-extrabold hover:bg-white/15"
           >
             <KeyRound size={14} />
@@ -233,7 +252,7 @@ export default function StaffPage({ staff, currentUserId, currentRole, onAdd, on
           <div className="w-[360px] rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between">
               <p className="text-[15px] font-extrabold">Change administrator PIN</p>
-              <button onClick={() => setAdminPins(null)} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
+              <button onClick={() => setAdminPins(null)} disabled={adminPinSaving} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 disabled:opacity-40">
                 <X size={17} />
               </button>
             </div>
@@ -241,14 +260,22 @@ export default function StaffPage({ staff, currentUserId, currentRole, onAdd, on
               <input
                 autoFocus
                 value={adminPins.a}
-                onChange={(e) => setAdminPins({ ...adminPins, a: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                onChange={(e) => {
+                  setAdminPinError('')
+                  setAdminPins({ ...adminPins, a: e.target.value.replace(/\D/g, '').slice(0, 6) })
+                }}
+                disabled={adminPinSaving}
                 placeholder="New PIN (4–6 digits)"
                 inputMode="numeric"
                 className="rounded-xl border border-neutral-200 px-3.5 py-2.5 text-center text-[15px] font-extrabold tracking-[0.4em] outline-none focus:border-primary"
               />
               <input
                 value={adminPins.b}
-                onChange={(e) => setAdminPins({ ...adminPins, b: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                onChange={(e) => {
+                  setAdminPinError('')
+                  setAdminPins({ ...adminPins, b: e.target.value.replace(/\D/g, '').slice(0, 6) })
+                }}
+                disabled={adminPinSaving}
                 placeholder="Confirm new PIN"
                 inputMode="numeric"
                 className="rounded-xl border border-neutral-200 px-3.5 py-2.5 text-center text-[15px] font-extrabold tracking-[0.4em] outline-none focus:border-primary"
@@ -256,16 +283,16 @@ export default function StaffPage({ staff, currentUserId, currentRole, onAdd, on
               {adminPins.a && adminPins.b && adminPins.a !== adminPins.b && (
                 <p className="text-center text-[11px] font-bold text-red-500">PINs do not match</p>
               )}
+              {adminPinError && (
+                <p role="alert" className="text-center text-[11px] font-bold text-red-500">{adminPinError}</p>
+              )}
             </div>
             <button
-              onClick={() => {
-                onAdminPin?.(adminPins.a)
-                setAdminPins(null)
-              }}
-              disabled={!/^\d{4,6}$/.test(adminPins.a) || adminPins.a !== adminPins.b}
+              onClick={saveAdminPin}
+              disabled={adminPinSaving || !/^\d{4,6}$/.test(adminPins.a) || adminPins.a !== adminPins.b}
               className="mt-5 w-full rounded-xl bg-primary py-3 text-[13px] font-extrabold text-white hover:bg-primary-dark disabled:opacity-40"
             >
-              Save new PIN
+              {adminPinSaving ? 'Saving new PIN…' : 'Save new PIN'}
             </button>
           </div>
         </div>

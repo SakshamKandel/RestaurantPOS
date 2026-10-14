@@ -15,6 +15,8 @@ npm run dev:app   # desktop app with hot reload (Vite + Electron window)
 npm start         # production build + launch packaged-mode window
 npm run dist      # build Windows installer (NSIS)
 node scripts/dbtest.cjs   # storage + auth layer test
+node scripts/updatetest.cjs   # updater IPC regression checks
+node scripts/login-update-test.cjs   # login-screen update controls
 ```
 
 ## Staff & the hidden Administrator
@@ -31,8 +33,46 @@ node scripts/dbtest.cjs   # storage + auth layer test
 - Managers can issue **one-time PINs**; the staff member must set a new PIN at
   next login.
 
+### Recover a forgotten Administrator PIN
+
+If Administrator rejects `8865`, the saved PIN may have been changed. If the
+current PIN is known, use it. Otherwise, support can restore the Administrator
+PIN with the repository helper on the client's computer (requires Node.js and
+this project's installed dependencies):
+
+1. Close KhadkaPOS completely and keep it closed until recovery finishes.
+2. From this project folder, check the **client's actual database path**:
+
+   ```powershell
+   node scripts/reset-admin-pin.cjs "$env:APPDATA\KhadkaPOS\pos.db"
+   ```
+
+3. If the saved PIN differs or is invalid, run the same command with `--reset`:
+
+   ```powershell
+   node scripts/reset-admin-pin.cjs "$env:APPDATA\KhadkaPOS\pos.db" --reset
+   ```
+
+4. Restart KhadkaPOS, sign in as Administrator with `8865`, then set a new PIN
+   in Staff Management. Older app versions with a four-digit login keypad need
+   a four-digit PIN until upgraded to a version that accepts 4–6 digits.
+
+The default command only checks the PIN; it prints no stored PIN or hash.
+`--reset` requires an existing database and makes and verifies a full SQLite
+backup beside it before changing only `kv.admin_pin`. Sales, staff PINs, and
+other settings stay unchanged. The helper does not create tables or migrate
+app data. If the client uses a custom data folder, pass that absolute `pos.db`
+path instead. Do not delete `pos.db`, clear app data, or remove database lock
+files to recover a PIN.
+
 ## Features
 
+- **Updates before login** — the login screen shows the current version and
+  Check for Updates, download status, and Restart & Update when ready. No PIN
+  is needed to update; updating preserves the saved administrator PIN.
+- **Item modifier settings** — use Modifiers beside each item in Menu
+  Management to edit that item's groups, options, extra prices, and selection
+  rules. Changes apply only to that item; Cancel discards the draft.
 - **Dashboard** — menu grid, category/search filters, live order-line strip
   (Waiting → Ready → Served), order types: Take Away / Collection / Delivery,
   customer attach, hold & recall parked orders

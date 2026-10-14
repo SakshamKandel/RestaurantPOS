@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Delete, KeyRound, Lock, ShieldCheck } from 'lucide-react'
 import { SUPER_ADMIN, type Staff } from '../data/menu'
 import type { LoginResult } from '../store'
@@ -14,9 +14,10 @@ interface Props {
   onVerify: (id: string, pin: string) => Promise<LoginResult>
   onLogin: (staff: Staff, newPin?: string) => void
   onSetup: (name: string, pin: string) => void
+  footer?: ReactNode
 }
 
-export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props) {
+export default function LoginScreen({ staff, onVerify, onLogin, onSetup, footer }: Props) {
   const [selected, setSelected] = useState<Staff | null>(null)
   const [pin, setPin] = useState('')
   const [newPin, setNewPin] = useState('')
@@ -65,9 +66,19 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props
         reject(r.reason === 'no-account' ? 'Account not found' : `Wrong PIN, try again${r.fails && r.fails >= 2 ? ` (${r.fails} failed)` : ''}`)
       }
       return null
+    } catch {
+      reject('Could not check your PIN. Please try again.')
+      return null
     } finally {
       setBusy(false)
     }
+  }
+
+  const submitAdmin = () => {
+    if (busy || !/^\d{4,6}$/.test(pin)) return
+    if (lockLeft) return reject(`Locked — try again in ${lockLeft}s`)
+    setError('')
+    void verify(SUPER_ADMIN, pin).then((r) => r && onLogin(SUPER_ADMIN))
   }
 
   const push = (key: string) => {
@@ -75,15 +86,11 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props
     setError('')
     if (key === 'clear') return setPin('')
     if (key === 'del') return setPin((p) => p.slice(0, -1))
-    const next = (pin + key).slice(0, 4)
+    const next = (pin + key).slice(0, adminMode ? 6 : 4)
     setPin(next)
+    // Owner PINs may have 4–6 digits. Wait for Sign in instead of checking a prefix.
+    if (adminMode) return
     if (next.length !== 4) return
-
-    if (adminMode) {
-      if (lockLeft) return reject(`Locked — try again in ${lockLeft}s`)
-      void verify(SUPER_ADMIN, next).then((r) => r && onLogin(SUPER_ADMIN))
-      return
-    }
 
     if (isSetup) {
       // First-boot: create PIN, then confirm
@@ -140,7 +147,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props
         pin: [
           adminMode ? 'Administrator' : selected ? `Hi, ${selected.name.split(' ')[0]}` : 'Enter your PIN',
           adminMode
-            ? 'Enter the owner PIN'
+            ? 'Enter your 4–6 digit owner PIN, then tap Sign in'
             : selected?.mustChangePin
               ? 'First login — enter your one-time PIN'
               : selected
@@ -152,7 +159,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props
       }
 
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-canvas">
+    <div className="flex min-h-screen w-full flex-col items-center justify-center gap-4 bg-canvas py-6">
       <div className="flex w-[720px] overflow-hidden rounded-3xl bg-white shadow-2xl shadow-neutral-300">
         {/* Left panel — staff picker, or first-boot admin setup */}
         <div className="relative w-[380px] border-r border-neutral-100 p-8 pb-14">
@@ -191,6 +198,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props
                 {active.map((s) => (
                   <button
                     key={s.id}
+                    disabled={busy}
                     onClick={() => {
                       setSelected(s)
                       setPin('')
@@ -229,6 +237,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props
           {/* Discreet owner access — recovery path if a manager forgets their PIN */}
           <button
             onClick={pickAdmin}
+            disabled={busy}
             className={`absolute bottom-5 left-8 flex items-center gap-1.5 text-[10.5px] font-bold transition-colors ${
               adminMode ? 'text-neutral-700' : 'text-neutral-300 hover:text-neutral-500'
             }`}
@@ -249,7 +258,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props
           </p>
 
           <div className="mt-4 flex gap-2.5">
-            {[0, 1, 2, 3].map((i) => (
+            {Array.from({ length: adminMode ? 6 : 4 }, (_, i) => (
               <span
                 key={i}
                 className={`h-3.5 w-3.5 rounded-full transition-colors ${
@@ -284,8 +293,18 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup }: Props
               </button>
             ))}
           </div>
+          {adminMode && (
+            <button
+              disabled={busy || lockLeft > 0 || pin.length < 4}
+              onClick={submitAdmin}
+              className="mt-4 w-full rounded-2xl bg-primary py-3 text-[13px] font-extrabold text-white hover:bg-primary-dark disabled:opacity-40"
+            >
+              {busy ? 'Checking…' : 'Sign in'}
+            </button>
+          )}
         </div>
       </div>
+      {footer && <div className="w-[720px]">{footer}</div>}
     </div>
   )
 }

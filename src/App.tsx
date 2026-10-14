@@ -7,6 +7,7 @@ import OrderPanel, {
   type PaymentMethod,
 } from './components/OrderPanel'
 import LoginScreen from './components/LoginScreen'
+import LoginUpdatePanel from './components/LoginUpdatePanel'
 import ModifierModal from './components/ModifierModal'
 import PaymentModal from './components/PaymentModal'
 import ReceiptModal from './components/ReceiptModal'
@@ -42,6 +43,7 @@ import {
 import {
   appVersion,
   backupNow,
+  checkForUpdates,
   detectPrinters,
   initialState,
   installUpdate,
@@ -83,6 +85,12 @@ import type { CartMap } from './components/MenuSection'
 
 const uid = () => Math.random().toString(36).slice(2, 10)
 
+type UpdateCheckState = {
+  status: 'idle' | 'checking' | 'none' | 'found' | 'error' | 'dev'
+  version?: string
+  message?: string
+}
+
 const TYPE_LABEL: Record<OrderType, string> = {
   'take-away': 'Take Away',
   collection: 'Collection',
@@ -116,19 +124,52 @@ export default function App() {
   loadedRef.current = loaded
   const [printers, setPrinters] = useState<DetectedPrinter[]>([])
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
+  const [downloadedUpdate, setDownloadedUpdate] = useState<UpdateInfo | null>(null)
+  const [updateStatus, setUpdateStatus] = useState<UpdateCheckState>({ status: 'idle' })
   const [version, setVersion] = useState('')
   const [lastOrder, setLastOrder] = useState<PlacedOrder | null>(null)
   const [logFocus, setLogFocus] = useState<string | null>(null)
 
   const refreshPrinters = () => detectPrinters().then(setPrinters)
+  const checkUpdates = async () => {
+    if (updateStatus.status === 'checking' || updateStatus.status === 'found') return
+    if (!navigator.onLine) {
+      setUpdateStatus({ status: 'error', message: 'No internet connection. Connect and try again.' })
+      return
+    }
+    setUpdateStatus({ status: 'checking' })
+    try {
+      const result = await checkForUpdates()
+      // Download events can arrive before the metadata promise resolves.
+      // Keep their newer success/error state so a failed download stays retryable.
+      setUpdateStatus((current) => current.status === 'checking' ? result ?? { status: 'dev' } : current)
+    } catch {
+      setUpdateStatus((current) => current.status === 'checking' ? { status: 'error' } : current)
+    }
+  }
   useEffect(() => {
     refreshPrinters()
     appVersion().then(setVersion)
-    onUpdateChecking(() => flash('Checking for updates…'))
-    onUpdateAvailable((i) => flash(`Update v${i.version} found — downloading…`))
-    onUpdateNone((i) => flash(`You're on the latest version (v${i.version})`))
-    onUpdateError(() => flash("Couldn't check for updates — offline or GitHub unreachable"))
-    onUpdateDownloaded((info) => setUpdate(info))
+    onUpdateChecking(() => {
+      setUpdateStatus({ status: 'checking' })
+      flash('Checking for updates…')
+    })
+    onUpdateAvailable((i) => {
+      setUpdateStatus({ status: 'found', version: i.version })
+      flash(`Update v${i.version} found — downloading…`)
+    })
+    onUpdateNone((i) => {
+      setUpdateStatus({ status: 'none', version: i.version })
+      flash(`You're on the latest version (v${i.version})`)
+    })
+    onUpdateError(() => {
+      setUpdateStatus({ status: 'error' })
+      flash("Couldn't check for updates — offline or GitHub unreachable")
+    })
+    onUpdateDownloaded((info) => {
+      setDownloadedUpdate(info)
+      setUpdate(info)
+    })
     // Anything that escapes normal handling lands in logs/app-errors.txt
     const onWinError = (e: ErrorEvent) =>
       logError('app', `ui error: ${e.message}${e.filename ? ` (${e.filename.split(/[\\/]/).pop()}:${e.lineno})` : ''}`)
@@ -1009,6 +1050,15 @@ export default function App() {
       <>
       <LoginScreen
         staff={state.staff}
+        footer={
+          <LoginUpdatePanel
+            version={version}
+            status={updateStatus}
+            downloaded={downloadedUpdate}
+            onCheck={checkUpdates}
+            onInstall={() => installUpdate()}
+          />
+        }
         onVerify={(id, pin) => verifyLogin(id, pin, state.staff)}
         onSetup={(name, pin) => {
           const admin: Staff = {
@@ -1238,8 +1288,9 @@ export default function App() {
           onUpdate={editStaff}
           onResetPin={resetStaffPin}
           onToggleActive={toggleStaffActive}
-          onAdminPin={(pin) => {
-            void setPinSecure(SUPER_ADMIN.id, pin)
+          onAdminPin={async (pin) => {
+            const result = await setPinSecure(SUPER_ADMIN.id, pin)
+            if (!result.ok) throw new Error(result.reason ?? 'Could not save administrator PIN. Try again.')
             audit('staff.admin_pin_changed', 'administrator PIN updated')
             flash('Administrator PIN updated')
           }}
