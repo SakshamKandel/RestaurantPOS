@@ -3,9 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const { randomUUID } = require('crypto')
 const { Database } = require('node-sqlite3-wasm')
-const { hashPin, verifyPin } = require('../electron/auth.cjs')
-
-const DEFAULT_PIN = '8865'
+const { DEFAULT_ADMIN_PIN: DEFAULT_PIN, hashPin, verifyPin } = require('../electron/auth.cjs')
 
 function integrityCheck(db) {
   const rows = db.all('PRAGMA integrity_check')

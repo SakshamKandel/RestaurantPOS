@@ -4,6 +4,7 @@ const crypto = require('crypto')
 
 const ITER = 120_000
 const KEYLEN = 32
+const DEFAULT_ADMIN_PIN = '8865'
 
 /** scrypt-strength via PBKDF2-SHA256 (built-in, no native deps). Format: pbkdf2$iter$salt$hash */
 function hashPin(pin) {
@@ -44,4 +45,4 @@ function recordFailure(id) {
 
 const clearFailures = (id) => attempts.delete(id)
 
-module.exports = { hashPin, verifyPin, isHashed, lockedFor, recordFailure, clearFailures }
+module.exports = { DEFAULT_ADMIN_PIN, hashPin, verifyPin, isHashed, lockedFor, recordFailure, clearFailures }

@@ -240,7 +240,7 @@ ipcMain.handle('logs:open', () => {
 
 // --- Auth: PINs are verified in the main process; renderer never sees hashes ---
 const ADMIN_ID = 'super-admin'
-const ADMIN_DEFAULT_PIN = '8865'
+const ADMIN_DEFAULT_PIN = auth.DEFAULT_ADMIN_PIN
 
 function adminHash() {
   let h = db.getKv('admin_pin')

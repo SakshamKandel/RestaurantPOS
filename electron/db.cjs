@@ -4,7 +4,7 @@
 const fs = require('fs')
 const path = require('path')
 const { Database } = require('node-sqlite3-wasm')
-const { hashPin, isHashed } = require('./auth.cjs')
+const { DEFAULT_ADMIN_PIN, hashPin, isHashed } = require('./auth.cjs')
 
 const COLLECTIONS = ['orders', 'held', 'customers', 'printJobs', 'menu', 'categories', 'shifts', 'audit', 'staff']
 const SCALARS = ['settings', 'seq'] // stored in kv as JSON
@@ -16,6 +16,7 @@ let dbFile = ''
 function open(userData, legacyJson) {
   dbFile = path.join(userData, 'pos.db')
   const fresh = !fs.existsSync(dbFile)
+  const hasLegacyStore = !!legacyJson && fs.existsSync(legacyJson)
   db = new Database(dbFile)
   db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;')
   db.exec(`
@@ -29,10 +30,14 @@ function open(userData, legacyJson) {
   `)
   if (!db.get(`SELECT value FROM meta WHERE key='schema'`)) db.run(`INSERT INTO meta VALUES ('schema','1')`)
 
+  // Create the owner PIN before the first login on a brand-new installation.
+  // Database creation is the one-time guard: upgrades and restarts keep the saved PIN.
+  if (fresh && !hasLegacyStore) setKv('admin_pin', hashPin(DEFAULT_ADMIN_PIN))
+
   // One-time import of the pre-SQLite JSON store. The file is NOT renamed:
   // it's kept and re-synced at quit so a downgrade to a JSON-based version
   // still finds its data (rollback support).
-  if (fresh && legacyJson && fs.existsSync(legacyJson)) {
+  if (fresh && hasLegacyStore) {
     try {
       const data = JSON.parse(fs.readFileSync(legacyJson, 'utf8'))
       commit(data, /*force*/ true)

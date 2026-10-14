@@ -17,6 +17,7 @@ npm run dist      # build Windows installer (NSIS)
 node scripts/dbtest.cjs   # storage + auth layer test
 node scripts/updatetest.cjs   # updater IPC regression checks
 node scripts/login-update-test.cjs   # login-screen update controls
+node scripts/firstboot-auth-test.cjs   # new-install administrator PIN initialization
 ```
 
 ## Staff & the hidden Administrator
@@ -27,6 +28,10 @@ node scripts/login-update-test.cjs   # login-screen update controls
 - A hidden **Administrator** account (default PIN `8865`, change it in Staff
   Management) can manage every role including managers — it's the recovery
   path when a manager forgets their PIN. It never appears in the staff list.
+- Brand-new installations initialize the Administrator PIN to `8865` once at
+  startup. The manager setup PIN is separate. Restarting, reinstalling, or
+  updating with existing app data preserves the saved Administrator PIN;
+  the recovery script does not run automatically.
 - PINs are **PBKDF2-hashed with per-PIN salts** inside the main process — the
   UI never sees a stored PIN or hash, and repeated wrong attempts trigger an
   escalating lockout.
