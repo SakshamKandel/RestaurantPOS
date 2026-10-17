@@ -147,7 +147,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup, footer 
         pin: [
           adminMode ? 'Administrator' : selected ? `Hi, ${selected.name.split(' ')[0]}` : 'Enter your PIN',
           adminMode
-            ? 'Enter your 4–6 digit owner PIN, then tap Sign in'
+            ? 'Your PIN can have 4, 5 or 6 digits. Tap Sign in when done.'
             : selected?.mustChangePin
               ? 'First login — enter your one-time PIN'
               : selected
@@ -258,7 +258,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup, footer 
           </p>
 
           <div className="mt-4 flex gap-2.5">
-            {Array.from({ length: adminMode ? 6 : 4 }, (_, i) => (
+            {Array.from({ length: adminMode ? Math.max(4, pin.length) : 4 }, (_, i) => (
               <span
                 key={i}
                 className={`h-3.5 w-3.5 rounded-full transition-colors ${

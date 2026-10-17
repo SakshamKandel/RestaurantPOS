@@ -40,6 +40,14 @@ node scripts/firstboot-auth-test.cjs   # new-install administrator PIN initializ
 
 ### Recover a forgotten Administrator PIN
 
+For an installed Windows app, use the [Administrator recovery ZIP](https://github.com/SakshamKandel/RestaurantPOS/releases/download/v0.4.3/KhadkaPOS-Admin-Recovery.zip).
+Close KhadkaPOS, extract the complete ZIP, and double-click **Restore
+Administrator PIN.cmd**. This uses the installed app's runtime; Node.js and
+project files are not required. It verifies a full database backup before
+restoring only the Administrator PIN to `8865`. Reopen the app and select
+**Administrator** at the bottom left, enter `8865`, and press **Sign in**.
+Staff and manager PINs are separate. Keep the backup path printed by the tool.
+
 If Administrator rejects `8865`, the saved PIN may have been changed. If the
 current PIN is known, use it. Otherwise, support can restore the Administrator
 PIN with the repository helper on the client's computer (requires Node.js and
@@ -69,6 +77,16 @@ other settings stay unchanged. The helper does not create tables or migrate
 app data. If the client uses a custom data folder, pass that absolute `pos.db`
 path instead. Do not delete `pos.db`, clear app data, or remove database lock
 files to recover a PIN.
+
+To rebuild or test the portable tool from source:
+
+```powershell
+node scripts/build-admin-recovery.cjs "C:\RecoveryBuild"
+node scripts/client-recovery-test.cjs "C:\path\to\KhadkaPOS.exe" "C:\RecoveryBuild\KhadkaPOS-Admin-Recovery"
+```
+
+The build directory must not already contain a recovery package. The runtime
+tests use only generated temporary databases and never installed app data.
 
 ## Features
 
