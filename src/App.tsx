@@ -30,7 +30,6 @@ import {
   lineKey,
   migrateSettings,
   modsTotal,
-  SUPER_ADMIN,
   type Category,
   type CategoryId,
   type Customer,
@@ -1288,12 +1287,6 @@ export default function App() {
           onUpdate={editStaff}
           onResetPin={resetStaffPin}
           onToggleActive={toggleStaffActive}
-          onAdminPin={async (pin) => {
-            const result = await setPinSecure(SUPER_ADMIN.id, pin)
-            if (!result.ok) throw new Error(result.reason ?? 'Could not save administrator PIN. Try again.')
-            audit('staff.admin_pin_changed', 'administrator PIN updated')
-            flash('Administrator PIN updated')
-          }}
         />
       )}
       {view === 'settings' && (

@@ -289,8 +289,8 @@ const LS_KEY = 'khadkapos'
 export const isDesktop = !!bridge?.loadStore
 
 /**
- * Verify a PIN. On desktop this is checked against the salted hash in SQLite
- * with lockout; the browser preview falls back to the plaintext in state.
+ * Verify a PIN. Desktop staff use salted hashes in SQLite; Administrator uses
+ * the fixed owner PIN. Desktop checks include lockout. Preview uses local state.
  */
 export async function verifyLogin(id: string, pin: string, fallbackStaff: Staff[]): Promise<LoginResult> {
   if (bridge?.login) return bridge.login(id, pin)
@@ -300,7 +300,9 @@ export async function verifyLogin(id: string, pin: string, fallbackStaff: Staff[
 }
 
 export const setPinSecure = (id: string, pin: string) =>
-  bridge?.setPin?.(id, pin) ?? Promise.resolve({ ok: true })
+  id === SUPER_ADMIN.id
+    ? Promise.resolve({ ok: false, reason: 'Administrator uses a fixed PIN and cannot be changed' })
+    : bridge?.setPin?.(id, pin) ?? Promise.resolve({ ok: true })
 
 export const dbIntegrity = () => bridge?.integrity?.() ?? Promise.resolve({ result: 'n/a (browser)', file: 'localStorage' })
 

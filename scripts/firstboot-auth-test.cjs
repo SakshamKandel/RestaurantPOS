@@ -4,6 +4,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { isDeepStrictEqual } = require('node:util')
 const db = require('../electron/db.cjs')
 const auth = require('../electron/auth.cjs')
 
@@ -34,16 +35,25 @@ const emptyState = () => ({
   orders: [], held: [], customers: [], printJobs: [], menu: [], categories: [], shifts: [], audit: [], staff: [],
   settings: {}, seq: 1,
 })
-const storedAdminHash = () => db.getKv('admin_pin')
-const verifyDefaultSeed = () => {
-  const hash = storedAdminHash()
-  assert.ok(auth.isHashed(hash), 'Startup must store a hash before any login')
-  assert.ok(auth.verifyPin('8865', hash), 'Fresh startup hash must accept the default administrator PIN')
-  return hash
+const noAdministratorKey = Symbol('no administrator key')
+const assertNoAdministratorKey = () => {
+  assert.ok(db.getKv('admin_pin', noAdministratorKey) === noAdministratorKey,
+    'The fixed Administrator PIN must not require or initialize a database credential')
 }
-const assertHashPreserved = (expected) => {
+const assertLegacyValuePreserved = (expected) => {
   // Compare as a boolean so assertion failures never print credential hashes.
-  assert.ok(storedAdminHash() === expected, 'Existing administrator hash must remain exactly unchanged')
+  assert.ok(db.getKv('admin_pin') === expected, 'Ignored legacy Administrator value must remain exactly unchanged')
+}
+const rawRows = (connection) => {
+  const result = {}
+  for (const { name } of connection.all("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name")) {
+    const quoted = `"${name.replaceAll('"', '""')}"`
+    result[name] = connection.all(`SELECT * FROM ${quoted} ORDER BY 1`)
+  }
+  return result
+}
+const assertRowsPreserved = (connection, expected) => {
+  assert.ok(isDeepStrictEqual(rawRows(connection), expected), 'Startup must preserve every existing database row')
 }
 let passed = 0
 const test = (name, run) => {
@@ -58,61 +68,77 @@ const test = (name, run) => {
 
 try {
   verifyGeneratedRoot()
-  assert.equal(auth.DEFAULT_ADMIN_PIN, '8865', 'The shared fresh-install default must remain consistent')
+  assert.equal(auth.DEFAULT_ADMIN_PIN, '8865', 'The fixed Administrator PIN must remain consistent')
 
-  test('fresh startup seeds hidden administrator before login and leaves manager setup empty', () => {
+  test('fresh startup needs no saved Administrator credential and leaves manager setup empty', () => {
     const { directory, legacy } = scenarioPaths('fresh')
     db.open(directory, legacy)
-    verifyDefaultSeed()
-    assert.equal(db.load(), null, 'A hidden credential must not create visible staff or skip the setup wizard')
+    assertNoAdministratorKey()
+    assert.equal(db.load(), null, 'Startup must not create visible staff or skip the setup wizard')
   })
 
-  test('restart preserves the exact automatically seeded hash', () => {
+  test('restart does not introduce a saved Administrator credential', () => {
     const { directory, legacy } = scenarioPaths('restart')
-    db.open(directory, legacy)
-    const initialHash = verifyDefaultSeed()
+    const connection = db.open(directory, legacy)
+    assertNoAdministratorKey()
+    const originalRows = rawRows(connection)
     db.close()
-    db.open(directory, legacy)
-    assertHashPreserved(initialHash)
+    const reopened = db.open(directory, legacy)
+    assertNoAdministratorKey()
+    assertRowsPreserved(reopened, originalRows)
     assert.equal(db.load(), null)
   })
 
-  test('changed administrator credential survives restart and existing database upgrade', () => {
+  test('ignored legacy Administrator hash and all business data survive upgrade and restart', () => {
     const { directory, legacy } = scenarioPaths('custom')
-    db.open(directory, legacy)
+    const connection = db.open(directory, legacy)
     const customHash = auth.hashPin('572948')
     db.setKv('admin_pin', customHash)
-    db.commit({ ...emptyState(), orders: [{ id: 'existing-sale', number: '#T001', total: 1800 }] })
+    db.setKv('support_canary', { keep: true })
+    db.commit({
+      ...emptyState(),
+      orders: [{ id: 'existing-sale', number: '#T001', total: 1800 }],
+      staff: [{ id: 'existing-manager', name: 'Admin', role: 'manager', pin: '1234', active: true }],
+      customers: [{ id: 'existing-customer', name: 'Customer' }],
+      settings: { name: 'Existing Restaurant', taxRate: 0.095 },
+      seq: 12,
+    })
+    const originalRows = rawRows(connection)
     db.close()
-    db.open(directory, legacy)
-    assertHashPreserved(customHash)
-    assert.ok(auth.verifyPin('572948', storedAdminHash()), 'Existing custom credential must still work')
-    assert.ok(!auth.verifyPin('8865', storedAdminHash()), 'Default must not replace an existing custom credential')
-    assert.equal(db.load().orders[0].total, 1800, 'Existing sales must remain unchanged')
+    const upgraded = db.open(directory, legacy)
+    assertLegacyValuePreserved(customHash)
+    assertRowsPreserved(upgraded, originalRows)
+    assert.ok(auth.verifyPin('1234', db.staffRow('existing-manager').pin), 'A manager named Admin must retain their separate PIN')
     db.close()
-    db.open(directory, legacy)
-    assertHashPreserved(customHash)
+    const restarted = db.open(directory, legacy)
+    assertLegacyValuePreserved(customHash)
+    assertRowsPreserved(restarted, originalRows)
   })
 
-  test('manager creation and subsequent staff commits preserve the hidden seeded credential', () => {
+  test('manager and staff setup hashes staff PINs without creating an Administrator credential', () => {
     const { directory, legacy } = scenarioPaths('setup')
     db.open(directory, legacy)
-    const initialHash = verifyDefaultSeed()
+    assertNoAdministratorKey()
     const manager = { id: 'manager-test', name: 'Test Manager', role: 'manager', pin: '1234', active: true, mustChangePin: false }
     db.commit({ ...emptyState(), staff: [manager] })
-    assertHashPreserved(initialHash)
+    assertNoAdministratorKey()
     const cashier = { id: 'cashier-test', name: 'Test Cashier', role: 'cashier', pin: '4321', active: true, mustChangePin: false }
     db.commit({ ...db.load(), staff: [...db.load().staff, cashier] })
-    assertHashPreserved(initialHash)
+    assertNoAdministratorKey()
+    assert.ok(auth.isHashed(db.staffRow(manager.id).pin), 'Manager PIN must be hashed')
+    assert.ok(auth.isHashed(db.staffRow(cashier.id).pin), 'Cashier PIN must be hashed')
     assert.ok(auth.verifyPin('1234', db.staffRow(manager.id).pin), 'Manager credential must persist through renderer commits')
     assert.ok(auth.verifyPin('4321', db.staffRow(cashier.id).pin), 'Staff setup must preserve its own credential')
     assert.equal(db.load().staff.length, 2, 'The hidden administrator must remain outside visible staff')
+    assert.ok(db.load().staff.every((member) => member.pin === '' && member.hasPin), 'Renderer must receive no stored staff PINs')
     db.close()
     db.open(directory, legacy)
-    assertHashPreserved(initialHash)
+    assertNoAdministratorKey()
+    assert.ok(auth.verifyPin('1234', db.staffRow(manager.id).pin), 'Manager PIN must survive restart')
+    assert.ok(auth.verifyPin('4321', db.staffRow(cashier.id).pin), 'Cashier PIN must survive restart')
   })
 
-  test('legacy JSON import avoids eager administrator seeding and preserves sales and staff credentials', () => {
+  test('legacy JSON import preserves sales and staff credentials without a saved Administrator PIN', () => {
     const { directory, legacy } = scenarioPaths('legacy')
     fs.writeFileSync(legacy, JSON.stringify({
       ...emptyState(),
@@ -121,32 +147,49 @@ try {
       seq: 42,
     }))
     db.open(directory, legacy)
-    assert.equal(storedAdminHash(), null, 'A migrated installation must retain its lazy administrator fallback')
+    assertNoAdministratorKey()
     const state = db.load()
     assert.equal(state.orders[0].id, 'legacy-sale')
     assert.equal(state.orders[0].total, 850)
     assert.equal(state.seq, 42)
+    assert.ok(auth.isHashed(db.staffRow('legacy-manager').pin), 'Imported plaintext staff PIN must be hashed')
     assert.ok(auth.verifyPin('4321', db.staffRow('legacy-manager').pin), 'Imported staff PIN must remain usable')
     assert.equal(state.staff[0].pin, '', 'Renderer state must not expose staff credentials')
     db.close()
     db.open(directory, legacy)
-    assert.equal(storedAdminHash(), null, 'Restart must not treat the migrated database as a fresh install')
+    assertNoAdministratorKey()
     assert.equal(db.load().orders.length, 1)
   })
 
-  test('an existing SQLite database missing the administrator key is not automatically seeded', () => {
+  test('an existing SQLite database needs no Administrator key and preserves staff and settings', () => {
     const { directory, legacy } = scenarioPaths('existing-no-key')
     const connection = db.open(directory, legacy)
-    // Simulate a prior app version using the connection returned by the public open API.
-    connection.run('DELETE FROM kv WHERE key=?', ['admin_pin'])
-    db.commit({ ...emptyState(), seq: 7 })
+    assertNoAdministratorKey()
+    db.commit({
+      ...emptyState(), seq: 7, settings: { name: 'Keep Existing Settings' },
+      staff: [{ id: 'old-cashier', name: 'Cashier', role: 'cashier', pin: '4321', active: true }],
+    })
+    const originalRows = rawRows(connection)
     db.close()
-    db.open(directory, legacy)
-    assert.equal(storedAdminHash(), null, 'Missing key in an existing database must retain the existing fallback')
-    assert.equal(db.load().seq, 7, 'Existing SQLite state must remain unchanged')
+    const reopened = db.open(directory, legacy)
+    assertNoAdministratorKey()
+    assertRowsPreserved(reopened, originalRows)
+    assert.ok(auth.verifyPin('4321', db.staffRow('old-cashier').pin), 'Existing staff PIN must remain usable')
   })
 
-  test('explicit factory reset removes synthetic stores and returns to fresh administrator seeding', () => {
+  test('malformed legacy Administrator data is preserved without affecting startup', () => {
+    const { directory, legacy } = scenarioPaths('malformed-legacy-admin')
+    const connection = db.open(directory, legacy)
+    connection.run('INSERT INTO kv(key,value) VALUES(?,?)', ['admin_pin', 'old-invalid-json'])
+    db.commit({ ...emptyState(), orders: [{ id: 'preserved-sale', total: 975 }] })
+    const originalRows = rawRows(connection)
+    db.close()
+    const reopened = db.open(directory, legacy)
+    assertRowsPreserved(reopened, originalRows)
+    assert.equal(db.load().orders[0].total, 975, 'Ignored legacy credential data must not block loading sales')
+  })
+
+  test('explicit factory reset of synthetic stores returns to manager setup without Administrator seeding', () => {
     const { directory, legacy } = scenarioPaths('reset')
     db.open(directory, legacy)
     db.setKv('admin_pin', auth.hashPin('572948'))
@@ -160,8 +203,7 @@ try {
     assert.ok(!fs.existsSync(databaseFile), 'Reset must remove only the synthetic SQLite file')
     assert.ok(!fs.existsSync(legacy), 'Reset must remove its synthetic legacy mirror')
     db.open(directory, legacy)
-    verifyDefaultSeed()
-    assert.ok(!auth.verifyPin('572948', storedAdminHash()), 'Factory reset must discard the previous custom credential')
+    assertNoAdministratorKey()
     assert.equal(db.load(), null, 'Factory reset must return to manager setup')
   })
 

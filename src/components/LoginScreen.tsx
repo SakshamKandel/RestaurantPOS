@@ -75,7 +75,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup, footer 
   }
 
   const submitAdmin = () => {
-    if (busy || !/^\d{4,6}$/.test(pin)) return
+    if (busy || !/^\d{4}$/.test(pin)) return
     if (lockLeft) return reject(`Locked — try again in ${lockLeft}s`)
     setError('')
     void verify(SUPER_ADMIN, pin).then((r) => r && onLogin(SUPER_ADMIN))
@@ -86,9 +86,9 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup, footer 
     setError('')
     if (key === 'clear') return setPin('')
     if (key === 'del') return setPin((p) => p.slice(0, -1))
-    const next = (pin + key).slice(0, adminMode ? 6 : 4)
+    const next = (pin + key).slice(0, 4)
     setPin(next)
-    // Owner PINs may have 4–6 digits. Wait for Sign in instead of checking a prefix.
+    // Administrator confirms with Sign in; staff PINs submit after four digits.
     if (adminMode) return
     if (next.length !== 4) return
 
@@ -147,7 +147,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup, footer 
         pin: [
           adminMode ? 'Administrator' : selected ? `Hi, ${selected.name.split(' ')[0]}` : 'Enter your PIN',
           adminMode
-            ? 'Your PIN can have 4, 5 or 6 digits. Tap Sign in when done.'
+            ? 'Enter your 4-digit Administrator PIN, then tap Sign in.'
             : selected?.mustChangePin
               ? 'First login — enter your one-time PIN'
               : selected
@@ -258,7 +258,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup, footer 
           </p>
 
           <div className="mt-4 flex gap-2.5">
-            {Array.from({ length: adminMode ? Math.max(4, pin.length) : 4 }, (_, i) => (
+            {Array.from({ length: 4 }, (_, i) => (
               <span
                 key={i}
                 className={`h-3.5 w-3.5 rounded-full transition-colors ${
@@ -295,7 +295,7 @@ export default function LoginScreen({ staff, onVerify, onLogin, onSetup, footer 
           </div>
           {adminMode && (
             <button
-              disabled={busy || lockLeft > 0 || pin.length < 4}
+              disabled={busy || lockLeft > 0 || pin.length !== 4}
               onClick={submitAdmin}
               className="mt-4 w-full rounded-2xl bg-primary py-3 text-[13px] font-extrabold text-white hover:bg-primary-dark disabled:opacity-40"
             >

@@ -4,7 +4,7 @@
 const fs = require('fs')
 const path = require('path')
 const { Database } = require('node-sqlite3-wasm')
-const { DEFAULT_ADMIN_PIN, hashPin, isHashed } = require('./auth.cjs')
+const { hashPin, isHashed } = require('./auth.cjs')
 
 const COLLECTIONS = ['orders', 'held', 'customers', 'printJobs', 'menu', 'categories', 'shifts', 'audit', 'staff']
 const SCALARS = ['settings', 'seq'] // stored in kv as JSON
@@ -29,10 +29,6 @@ function open(userData, legacyJson) {
     CREATE INDEX IF NOT EXISTS idx_audit_pos ON t_audit(pos);
   `)
   if (!db.get(`SELECT value FROM meta WHERE key='schema'`)) db.run(`INSERT INTO meta VALUES ('schema','1')`)
-
-  // Create the owner PIN before the first login on a brand-new installation.
-  // Database creation is the one-time guard: upgrades and restarts keep the saved PIN.
-  if (fresh && !hasLegacyStore) setKv('admin_pin', hashPin(DEFAULT_ADMIN_PIN))
 
   // One-time import of the pre-SQLite JSON store. The file is NOT renamed:
   // it's kept and re-synced at quit so a downgrade to a JSON-based version

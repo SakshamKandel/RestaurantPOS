@@ -162,8 +162,8 @@ export const STAFF: Staff[] = []
 /** Hidden owner account. Not in the staff list — reached from the
  *  "Administrator" link on the login screen. Can manage managers and staff,
  *  and is the recovery path when a manager forgets their PIN.
- *  On desktop the real PIN is a salted hash in SQLite (default 8865, changeable
- *  from the Staff page); `pin` here is only the browser-preview fallback. */
+ *  Uses the fixed PIN 8865 on desktop and in browser previews, independently
+ *  of saved database credentials. Staff PINs remain individually managed. */
 export const SUPER_ADMIN: Staff = {
   id: 'super-admin',
   name: 'Administrator',

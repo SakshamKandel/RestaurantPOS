@@ -17,7 +17,8 @@ npm run dist      # build Windows installer (NSIS)
 node scripts/dbtest.cjs   # storage + auth layer test
 node scripts/updatetest.cjs   # updater IPC regression checks
 node scripts/login-update-test.cjs   # login-screen update controls
-node scripts/firstboot-auth-test.cjs   # new-install administrator PIN initialization
+node scripts/fixed-admin-auth-test.cjs   # fixed Administrator PIN and staff auth checks
+node scripts/firstboot-auth-test.cjs   # fresh/legacy data and staff PIN checks
 ```
 
 ## Staff & the hidden Administrator
@@ -25,33 +26,38 @@ node scripts/firstboot-auth-test.cjs   # new-install administrator PIN initializ
 - First boot runs a setup wizard — the first account created is a **manager**.
 - Staff roles: **manager**, **cashier**, **kitchen**. Managers can administer
   cashiers and kitchen staff only; nobody can edit or reset their own account.
-- A hidden **Administrator** account (default PIN `8865`, change it in Staff
-  Management) can manage every role including managers — it's the recovery
-  path when a manager forgets their PIN. It never appears in the staff list.
-- Brand-new installations initialize the Administrator PIN to `8865` once at
-  startup. The manager setup PIN is separate. Restarting, reinstalling, or
-  updating with existing app data preserves the saved Administrator PIN;
-  the recovery script does not run automatically.
-- PINs are **PBKDF2-hashed with per-PIN salts** inside the main process — the
-  UI never sees a stored PIN or hash, and repeated wrong attempts trigger an
-  escalating lockout.
+- The hidden **Administrator** account uses the fixed PIN **`8865`** from
+  version **0.4.4**. Select **Administrator** at the bottom left of the login
+  screen, enter `8865`, and press **Sign in**. This account can manage every
+  role, including managers, and never appears in the staff list.
+- The Administrator PIN cannot be changed in Staff Management. It is separate
+  from every staff PIN, including a manager named Admin. New installations do
+  not store an Administrator credential in the database; existing legacy
+  `admin_pin` values remain untouched and are ignored during sign-in.
+- Staff PINs are **PBKDF2-hashed with per-PIN salts** inside the main process —
+  the UI never sees a stored PIN or hash, and repeated wrong attempts trigger
+  an escalating lockout.
 - Managers can issue **one-time PINs**; the staff member must set a new PIN at
   next login.
 
-### Recover a forgotten Administrator PIN
+### Administrator sign-in and older versions
 
-For an installed Windows app, use the [Administrator recovery ZIP](https://github.com/SakshamKandel/RestaurantPOS/releases/download/v0.4.3/KhadkaPOS-Admin-Recovery.zip).
-Close KhadkaPOS, extract the complete ZIP, and double-click **Restore
-Administrator PIN.cmd**. This uses the installed app's runtime; Node.js and
-project files are not required. It verifies a full database backup before
-restoring only the Administrator PIN to `8865`. Reopen the app and select
-**Administrator** at the bottom left, enter `8865`, and press **Sign in**.
-Staff and manager PINs are separate. Keep the backup path printed by the tool.
+If an older installation rejects `8865`, update to **0.4.4 or later**, then
+restart KhadkaPOS and select **Administrator** at the bottom left. Updating is
+enough to restore Administrator access with `8865`; sales, staff PINs, settings,
+and other app data are preserved. Updates are available from the login screen
+without signing in. Do not delete `pos.db` or clear app data.
 
-If Administrator rejects `8865`, the saved PIN may have been changed. If the
-current PIN is known, use it. Otherwise, support can restore the Administrator
-PIN with the repository helper on the client's computer (requires Node.js and
-this project's installed dependencies):
+The [Administrator recovery ZIP](https://github.com/SakshamKandel/RestaurantPOS/releases/download/v0.4.3/KhadkaPOS-Admin-Recovery.zip)
+is a legacy support tool for versions **0.4.3 and earlier** when updating is
+not possible. Close KhadkaPOS, extract the complete ZIP, and double-click
+**Restore Administrator PIN.cmd**. It uses the installed app's runtime and
+verifies a full database backup before restoring the legacy saved PIN to
+`8865`. Keep the backup path printed by the tool. Version 0.4.4 and later do
+not need this database reset.
+
+For those older versions, support can also use the repository helper on the
+client's computer (requires Node.js and this project's installed dependencies):
 
 1. Close KhadkaPOS completely and keep it closed until recovery finishes.
 2. From this project folder, check the **client's actual database path**:
@@ -66,9 +72,8 @@ this project's installed dependencies):
    node scripts/reset-admin-pin.cjs "$env:APPDATA\KhadkaPOS\pos.db" --reset
    ```
 
-4. Restart KhadkaPOS, sign in as Administrator with `8865`, then set a new PIN
-   in Staff Management. Older app versions with a four-digit login keypad need
-   a four-digit PIN until upgraded to a version that accepts 4–6 digits.
+4. Restart KhadkaPOS, select **Administrator** at the bottom left, enter `8865`,
+   and press **Sign in**. Staff and manager PINs are separate.
 
 The default command only checks the PIN; it prints no stored PIN or hash.
 `--reset` requires an existing database and makes and verifies a full SQLite
@@ -78,7 +83,7 @@ app data. If the client uses a custom data folder, pass that absolute `pos.db`
 path instead. Do not delete `pos.db`, clear app data, or remove database lock
 files to recover a PIN.
 
-To rebuild or test the portable tool from source:
+To rebuild or test this legacy portable tool from source:
 
 ```powershell
 node scripts/build-admin-recovery.cjs "C:\RecoveryBuild"
@@ -92,7 +97,7 @@ tests use only generated temporary databases and never installed app data.
 
 - **Updates before login** — the login screen shows the current version and
   Check for Updates, download status, and Restart & Update when ready. No PIN
-  is needed to update; updating preserves the saved administrator PIN.
+  is needed to update; updating preserves business data and staff PINs.
 - **Item modifier settings** — use Modifiers beside each item in Menu
   Management to edit that item's groups, options, extra prices, and selection
   rules. Changes apply only to that item; Cancel discards the draft.

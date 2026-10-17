@@ -242,19 +242,11 @@ ipcMain.handle('logs:open', () => {
 const ADMIN_ID = 'super-admin'
 const ADMIN_DEFAULT_PIN = auth.DEFAULT_ADMIN_PIN
 
-function adminHash() {
-  let h = db.getKv('admin_pin')
-  if (!h) {
-    h = auth.hashPin(ADMIN_DEFAULT_PIN)
-    db.setKv('admin_pin', h)
-  }
-  return h
-}
-
 ipcMain.handle('auth:login', (_e, { id, pin }) => {
   const locked = auth.lockedFor(id)
   if (locked) return { ok: false, lockSeconds: locked }
-  const stored = id === ADMIN_ID ? adminHash() : db.staffRow(id)?.pin
+  // Administrator always uses the fixed owner PIN, including when SQLite is unavailable.
+  const stored = id === ADMIN_ID ? ADMIN_DEFAULT_PIN : db.staffRow(id)?.pin
   if (!stored) return { ok: false, reason: 'no-account' }
   if (!auth.verifyPin(pin, stored)) {
     const { fails, lockSeconds } = auth.recordFailure(id)
@@ -270,11 +262,8 @@ ipcMain.handle('auth:login', (_e, { id, pin }) => {
 })
 
 ipcMain.handle('auth:set-pin', (_e, { id, pin }) => {
+  if (id === ADMIN_ID) return { ok: false, reason: 'Administrator uses a fixed PIN and cannot be changed' }
   if (!/^\d{4,6}$/.test(String(pin))) return { ok: false, reason: 'PIN must be 4–6 digits' }
-  if (id === ADMIN_ID) {
-    db.setKv('admin_pin', auth.hashPin(pin))
-    return { ok: true }
-  }
   return { ok: db.updateStaffRow(id, { pin: auth.hashPin(pin), mustChangePin: false }) }
 })
 
