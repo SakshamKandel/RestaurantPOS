@@ -73,11 +73,13 @@ import {
   type RefundRecord,
   type PosState,
   type PrintJob,
+  type PrintResult,
   type PrinterRole,
   type Shift,
   type UpdateInfo,
+  type UnpaidBill,
 } from './store'
-import { kitchenHtml, receiptHtml, testHtml } from './print/docs'
+import { kitchenHtml, receiptHtml, testHtml, unpaidBillHtml } from './print/docs'
 import { isCurrentBusinessDay } from './bizday'
 import type { DisplayOrder } from './components/OrderLine'
 import type { CartMap } from './components/MenuSection'
@@ -113,6 +115,8 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [payment, setPayment] = useState<PaymentMethod>('scan')
   const [payOpen, setPayOpen] = useState(false)
+  const [printingBill, setPrintingBill] = useState(false)
+  const billPrintBusy = useRef(false)
   const [receipt, setReceipt] = useState<PlacedOrder | null>(null)
   const [refundFor, setRefundFor] = useState<PlacedOrder | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -247,7 +251,7 @@ export default function App() {
       ].slice(0, 200),
     }))
 
-  // ---------- Print queue → real printers when detected, simulated otherwise ----------
+  // ---------- Print queue → confirmed results from the desktop printer bridge ----------
   const markJob = (job: PrintJob, status: PrintJob['status'], error?: string) => {
     if (status === 'failed')
       logError(
@@ -276,9 +280,17 @@ export default function App() {
 
   /** Send one job to hardware. Never fakes success: a job is 'printed' only
    *  when the Windows spooler accepted it, otherwise 'failed' with the reason. */
-  const processJob = (job: PrintJob, order?: PlacedOrder) => {
+  const processJob = async (job: PrintJob, order?: PlacedOrder): Promise<PrintResult> => {
     const s = state.settings
     const deviceName = deviceFor(job.role)
+    const fail = (reason: string): PrintResult => {
+      markJob(job, 'failed', reason)
+      return { ok: false, reason }
+    }
+
+    if (job.docType === 'UNPAID BILL' && !job.bill) return fail('Unpaid bill snapshot is missing')
+    if ((job.docType === 'KITCHEN TICKET' || job.docType === 'RECEIPT') && !order)
+      return fail('Original order no longer exists')
 
     // Archive reprint copies as PDFs before touching the printer — the stored
     // copy is the record even when no printer is usable. (Originals are saved
@@ -287,24 +299,31 @@ export default function App() {
       void saveReceiptCopy(order.number, receiptHtml(order, s, true), paperFor(job.role), true)
 
     const problem = roleProblem(job.role)
-    if (problem) return markJob(job, 'failed', problem)
+    if (problem) return fail(problem)
+    if (job.docType === 'UNPAID BILL' && !s.billingEnabled)
+      return fail('Billing printer is turned off — enable it in Settings')
 
     const html =
-      job.docType === 'KITCHEN TICKET' && order
-        ? kitchenHtml(order, s)
-        : job.docType === 'RECEIPT' && order
-          ? receiptHtml(order, s, job.copy)
-          : testHtml(job.role, s)
+      job.docType === 'UNPAID BILL' && job.bill
+        ? unpaidBillHtml(job.bill, s)
+        : job.docType === 'KITCHEN TICKET' && order
+          ? kitchenHtml(order, s)
+          : job.docType === 'RECEIPT' && order
+            ? receiptHtml(order, s, job.copy)
+            : testHtml(job.role, s)
 
-    const send =
-      job.docType === 'DRAWER KICK'
+    try {
+      const send = job.docType === 'DRAWER KICK'
         ? printRaw(deviceName, drawerKickBytes(s.drawerPin))
         : printDocument(deviceName, html, paperFor(job.role))
-
-    if (!send) return markJob(job, 'failed', 'Printing is only available in the desktop app')
-    send
-      .then((res) => markJob(job, res.ok ? 'printed' : 'failed', res.ok ? undefined : res.reason ?? 'Unknown printer error'))
-      .catch((e) => markJob(job, 'failed', String(e?.message ?? e)))
+      if (!send) return fail('Printing is only available in the desktop app')
+      const result = await send
+      if (!result.ok) return fail(result.reason ?? 'Unknown printer error')
+      markJob(job, 'printed')
+      return result
+    } catch (error) {
+      return fail(String((error as Error)?.message ?? error))
+    }
   }
 
   const makeJob = (docType: DocType, role: PrinterRole, orderNumber = '—', copy = false): PrintJob => ({
@@ -368,7 +387,7 @@ export default function App() {
   const retryJob = (id: string) => {
     const job = state.printJobs.find((j) => j.id === id)
     if (!job) return
-    const order = state.orders.find((o) => o.number === job.orderNumber)
+    const order = job.docType === 'UNPAID BILL' ? undefined : state.orders.find((o) => o.number === job.orderNumber)
     if (!order && (job.docType === 'KITCHEN TICKET' || job.docType === 'RECEIPT'))
       return markJob(job, 'failed', 'Original order no longer exists')
     setState((s) => ({
@@ -564,6 +583,58 @@ export default function App() {
   const allLineOrders = liveLineOrders
 
   // ---------- Actions ----------
+  const printBill = async () => {
+    if (billPrintBusy.current) return
+    if (!lines.length) return flash('Nothing to print — add an item first')
+    const customer = state.customers.find((c) => c.id === customerId)
+    const bill: UnpaidBill = {
+      number: `Draft #${state.settings.orderPrefix}${String(state.seq).padStart(3, '0')}`,
+      type: orderType,
+      customer: customer?.name ?? 'Walk-in',
+      lines: lines.map((line, index) => ({
+        name: line.item.name,
+        qty: line.qty,
+        price: line.item.price,
+        note: line.note,
+        mods: line.mods?.map((mod) => ({ ...mod })),
+        itemId: line.item.id,
+        taxClass: line.item.taxClass,
+        taxRate: rateFor(line.item),
+        category: line.item.category,
+        tax: lineTaxes[index],
+        net: lineNets[index],
+      })),
+      subtotal,
+      discount: discountCents,
+      tax,
+      taxBreakdown: taxBreakdown.map((row) => ({ ...row })),
+      total,
+      note: orderNote || undefined,
+      createdAt: Date.now(),
+      cashier: user?.name ?? 'Unknown',
+    }
+    const job: PrintJob = { ...makeJob('UNPAID BILL', 'billing', bill.number), bill }
+    billPrintBusy.current = true
+    setPrintingBill(true)
+    setState((s) => ({ ...s, printJobs: [job, ...s.printJobs] }))
+    try {
+      const result = await processJob(job)
+      if (result.ok) {
+        audit('printer.unpaid_bill', bill.number)
+        flash(`Unpaid bill sent → ${state.settings.billingPrinter}`)
+      } else {
+        flash(`Can't print bill — ${result.reason ?? 'check Printers for details'}`)
+      }
+    } catch (error) {
+      const reason = String((error as Error)?.message ?? error)
+      markJob(job, 'failed', reason)
+      flash(`Can't print bill — ${reason}`)
+    } finally {
+      billPrintBusy.current = false
+      setPrintingBill(false)
+    }
+  }
+
   const placeOrder = (method: PaymentMethod, tendered: number, change: number, payments: PaymentRecord[]) => {
     const customer = state.customers.find((c) => c.id === customerId)
     const order: PlacedOrder = {
@@ -1188,7 +1259,8 @@ export default function App() {
             onDiscountChange={setDiscount}
             onOrderNote={setOrderNote}
             onHold={holdOrder}
-            onPrint={() => flash('Receipt sent to billing printer')}
+            onPrint={() => void printBill()}
+            printing={printingBill}
             onOrder={() => setPayOpen(true)}
             hasLastOrder={!!lastOrder}
             onReprintLast={() => lastOrder && setReceipt(lastOrder)}

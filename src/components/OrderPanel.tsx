@@ -79,6 +79,7 @@ interface Props {
   onOrderNote: (n: string) => void
   onHold: () => void
   onPrint: () => void
+  printing?: boolean
   onOrder: () => void
   drawerEnabled: boolean
   onOpenDrawer: () => void
@@ -111,6 +112,7 @@ export default function OrderPanel({
   onOrderNote,
   onHold,
   onPrint,
+  printing = false,
   onOrder,
   drawerEnabled,
   onOpenDrawer,
@@ -406,11 +408,12 @@ export default function OrderPanel({
           </button>
           <button
             onClick={onPrint}
-            disabled={lines.length === 0}
+            disabled={lines.length === 0 || printing}
+            title="Print the current unpaid bill before payment"
             className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-200 py-2.5 text-[12.5px] font-bold text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Printer size={15} />
-            Print
+            {printing ? 'Printing…' : 'Print'}
           </button>
           <button
             onClick={onOpenDrawer}

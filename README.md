@@ -19,6 +19,10 @@ node scripts/updatetest.cjs   # updater IPC regression checks
 node scripts/login-update-test.cjs   # login-screen update controls
 node scripts/fixed-admin-auth-test.cjs   # fixed Administrator PIN and staff auth checks
 node scripts/firstboot-auth-test.cjs   # fresh/legacy data and staff PIN checks
+node scripts/modifier-autofill-test.cjs   # modifier matching and independent copies
+node scripts/menu-modifier-autofill-test.cjs   # menu form and modifier dialog flows
+node scripts/cart-print-test.cjs   # pre-payment printing, failures and retries
+node scripts/unpaid-bill-doc-test.cjs   # unpaid bills and paid receipt regression checks
 ```
 
 ## Staff & the hidden Administrator
@@ -101,6 +105,13 @@ tests use only generated temporary databases and never installed app data.
 - **Item modifier settings** — use Modifiers beside each item in Menu
   Management to edit that item's groups, options, extra prices, and selection
   rules. Changes apply only to that item; Cancel discards the draft.
+- **Modifier auto-fill** — new items reuse a matching modifier setup from the
+  same category. For example, Fanta can start with Coca-Cola's size choices in
+  Drinks. The form shows the source and lets you customize the copy or start
+  empty. If a category has different setups and no clear name match, choose
+  an item from **Copy modifiers from**. Existing items keep their settings;
+  their Modifiers dialog offers the same copy option. Copies stay independent
+  and are only saved with the item or **Save modifiers**.
 - **Dashboard** — menu grid, category/search filters, live order-line strip
   (Waiting → Ready → Served), order types: Take Away / Collection / Delivery,
   customer attach, hold & recall parked orders
@@ -108,6 +119,11 @@ tests use only generated temporary databases and never installed app data.
   or optional, single- or multi-select, per-option pricing. Each modifier
   combination is its own cart line; choices print on the kitchen ticket and
   the receipt.
+- **Print before payment** — Print beside Hold sends the current unpaid bill
+  to the assigned billing printer, including modifiers, notes, discounts, and
+  tax. The cart stays open for payment. Printer failures appear with their
+  reason; use Printers to preview or retry the saved bill snapshot. Printing
+  an unpaid bill does not complete a sale or open the cash drawer.
 - **Payment** — cash numpad with quick-tender and change, QR/scan, card, and
   **split payments** (mix cash + card + scan on one order); every component is
   stored and printed.

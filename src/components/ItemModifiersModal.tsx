@@ -1,19 +1,39 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { MenuItem, ModifierGroup } from '../data/menu'
+import { cloneModifierGroups, modifierSources, suggestModifierSource } from '../modifierAutofill'
 import ModifierGroupsEditor from './ModifierGroupsEditor'
 
 interface Props {
   item: MenuItem
+  menu: MenuItem[]
   onSave: (groups: ModifierGroup[]) => void
   onClose: () => void
 }
 
-export default function ItemModifiersModal({ item, onSave, onClose }: Props) {
+export default function ItemModifiersModal({ item, menu, onSave, onClose }: Props) {
   const [groups, setGroups] = useState<ModifierGroup[]>(() =>
     (item.modifiers ?? []).map((group) => ({ ...group, options: group.options.map((option) => ({ ...option })) })),
   )
   const [error, setError] = useState('')
+  const [copiedFrom, setCopiedFrom] = useState<{ id: string; name: string } | null>(null)
+  const [editorGeneration, setEditorGeneration] = useState(0)
+  const sources = modifierSources(menu, item)
+  const suggestion = suggestModifierSource(menu, item)
+
+  const copyFrom = (source: MenuItem) => {
+    setGroups(cloneModifierGroups(source.modifiers ?? []))
+    setCopiedFrom({ id: source.id, name: source.name })
+    setEditorGeneration((generation) => generation + 1)
+    setError('')
+  }
+
+  const startEmpty = () => {
+    setGroups([])
+    setCopiedFrom(null)
+    setEditorGeneration((generation) => generation + 1)
+    setError('')
+  }
 
   const save = () => {
     for (const group of groups) {
@@ -55,7 +75,45 @@ export default function ItemModifiersModal({ item, onSave, onClose }: Props) {
           </button>
         </div>
         <div className="thin-scroll min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="mb-4 rounded-2xl border border-neutral-200 p-3.5">
+            {groups.length === 0 && suggestion && (
+              <button
+                type="button"
+                onClick={() => copyFrom(suggestion)}
+                className="mb-3 rounded-xl bg-primary-soft px-3 py-2 text-left text-[11.5px] font-extrabold text-primary hover:bg-orange-100"
+              >
+                Auto-fill from {suggestion.name}
+              </button>
+            )}
+            {sources.length > 0 && (
+              <label className="block text-[10.5px] font-bold text-neutral-500">
+                Copy modifiers from
+                <select
+                  value={copiedFrom?.id ?? ''}
+                  onChange={(e) => {
+                    const source = sources.find((candidate) => candidate.id === e.target.value)
+                    if (source) copyFrom(source)
+                  }}
+                  className="mt-1.5 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-[11.5px] font-medium text-neutral-700 outline-none focus:border-primary"
+                >
+                  <option value="">Choose an item in this category</option>
+                  {sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
+                </select>
+              </label>
+            )}
+            <div className={`flex flex-wrap items-center justify-between gap-2 ${sources.length > 0 ? 'mt-3' : ''}`}>
+              {copiedFrom && (
+                <p role="status" className="min-w-0 flex-1 text-[10.5px] font-medium text-neutral-500">
+                  Copied from {copiedFrom.name} · Changes apply only to this item.
+                </p>
+              )}
+              <button type="button" onClick={startEmpty} className="text-[10.5px] font-bold text-neutral-500 hover:text-primary">
+                Start empty
+              </button>
+            </div>
+          </div>
           <ModifierGroupsEditor
+            key={editorGeneration}
             groups={groups}
             onChange={(next) => {
               setGroups(next)

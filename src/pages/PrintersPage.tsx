@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChefHat, Eye, FileText, Printer, RotateCcw, ScrollText, Settings2, Vault, X } from 'lucide-react'
 import type { DetectedPrinter, PrintJob, PlacedOrder, PrinterRole } from '../store'
 import type { Settings } from '../data/menu'
-import { kitchenHtml, receiptHtml } from '../print/docs'
+import { kitchenHtml, receiptHtml, unpaidBillHtml } from '../print/docs'
 
 const STATUS_BADGE: Record<PrintJob['status'], string> = {
   pending: 'bg-amber-100 text-amber-600',
@@ -56,6 +56,10 @@ export default function PrintersPage({ jobs, orders, settings, printers, onRetry
   const failedCount = jobs.filter((j) => j.status === 'failed').length
 
   const openPreview = (j: PrintJob) => {
+    if (j.docType === 'UNPAID BILL') {
+      if (j.bill) setPreview({ title: `Unpaid bill · ${j.orderNumber}`, html: unpaidBillHtml(j.bill, settings), mm: Number(settings.billingPaper) })
+      return
+    }
     const order = orders.find((o) => o.number === j.orderNumber)
     if (!order) return
     if (j.docType === 'KITCHEN TICKET')
@@ -228,7 +232,8 @@ export default function PrintersPage({ jobs, orders, settings, printers, onRetry
           <tbody className="divide-y divide-neutral-50">
             {sorted.map((j) => {
               const hasOrder = orders.some((o) => o.number === j.orderNumber)
-              const previewable = hasOrder && (j.docType === 'KITCHEN TICKET' || j.docType === 'RECEIPT')
+              const previewable = (j.docType === 'UNPAID BILL' && !!j.bill)
+                || (hasOrder && (j.docType === 'KITCHEN TICKET' || j.docType === 'RECEIPT'))
               return (
                 <tr key={j.id} className="transition-colors hover:bg-neutral-50/60">
                   <td className="px-5 py-3.5 text-[12.5px] font-bold">

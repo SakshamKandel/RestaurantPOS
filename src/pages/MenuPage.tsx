@@ -3,6 +3,7 @@ import { FolderCog, ImagePlus, Package, Pencil, Plus, Search, SlidersHorizontal,
 import { pickImage } from '../store'
 import ModifierGroupsEditor from '../components/ModifierGroupsEditor'
 import ItemModifiersModal from '../components/ItemModifiersModal'
+import { cloneModifierGroups, modifierSources, suggestModifierSource } from '../modifierAutofill'
 import {
   formatMoney,
   ICONS,
@@ -28,6 +29,9 @@ interface ItemForm {
   stock: string // '' = not tracked
   lowStockAt: string
   modifiers: ModifierGroup[]
+  autoModifiers: boolean
+  modifierSourceId: string
+  modifierRevision: number
 }
 
 const emptyForm = (category: CategoryId): ItemForm => ({
@@ -43,6 +47,9 @@ const emptyForm = (category: CategoryId): ItemForm => ({
   stock: '',
   lowStockAt: '5',
   modifiers: [],
+  autoModifiers: true,
+  modifierSourceId: '',
+  modifierRevision: 0,
 })
 
 interface Props {
@@ -77,6 +84,12 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
   const catLabel = (id: CategoryId) => categories.find((c) => c.id === id)?.label ?? id
   const catItemCount = (id: CategoryId) => menu.filter((m) => m.category === id).length
   const modifierItem = menu.find((m) => m.id === modifierItemId)
+  const sources = form ? modifierSources(menu, { ...form, id: form.id ?? undefined }) : []
+  const autoSource = form?.autoModifiers
+    ? suggestModifierSource(menu, { ...form, id: form.id ?? undefined })
+    : undefined
+  const formModifiers = autoSource ? cloneModifierGroups(autoSource.modifiers ?? []) : form?.modifiers ?? []
+  const copiedSource = autoSource ?? menu.find((item) => item.id === form?.modifierSourceId)
   const modifierSummary = (item: MenuItem) => {
     const groups = item.modifiers ?? []
     const options = groups.reduce((n, group) => n + group.options.length, 0)
@@ -98,7 +111,10 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
       taxClass: m.taxClass ?? '',
       stock: m.stock === undefined ? '' : String(m.stock),
       lowStockAt: String(m.lowStockAt ?? 5),
-      modifiers: (m.modifiers ?? []).map((g) => ({ ...g, options: g.options.map((o) => ({ ...o })) })),
+      modifiers: cloneModifierGroups(m.modifiers ?? []),
+      autoModifiers: false,
+      modifierSourceId: '',
+      modifierRevision: 0,
     })
 
   const submit = () => {
@@ -121,7 +137,7 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
       taxClass: form.taxClass || undefined,
       stock,
       lowStockAt: stock === undefined ? undefined : Math.max(0, parseInt(form.lowStockAt, 10) || 0),
-      modifiers: form.modifiers
+      modifiers: cloneModifierGroups(formModifiers)
         .filter((g) => g.name.trim() && g.options.length)
         .map((g) => ({ ...g, name: g.name.trim(), options: g.options.filter((o) => o.name.trim()) })),
     })
@@ -310,6 +326,7 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
         <ItemModifiersModal
           key={modifierItem.id}
           item={modifierItem}
+          menu={menu}
           onClose={() => setModifierItemId(null)}
           onSave={(modifiers) => {
             const latest = menu.find((m) => m.id === modifierItemId)
@@ -356,6 +373,7 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
                   className="w-32 rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[13px] font-medium outline-none focus:border-primary"
                 />
                 <select
+                  aria-label="Item category"
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value as CategoryId })}
                   className="flex-1 cursor-pointer rounded-xl border border-neutral-200 px-3.5 py-2.5 text-[13px] font-medium outline-none"
@@ -443,9 +461,71 @@ export default function MenuPage({ menu, categories, taxClasses, onSave, onDelet
               </div>
 
               {/* Modifier groups */}
+              <div className="rounded-2xl border border-orange-100 bg-orange-50/50 p-3.5">
+                {!form.id && (
+                  <label className="flex cursor-pointer items-center gap-2 text-[11.5px] font-extrabold text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={form.autoModifiers}
+                      onChange={(e) => setForm({
+                        ...form,
+                        autoModifiers: e.target.checked,
+                        modifiers: e.target.checked ? [] : cloneModifierGroups(formModifiers),
+                        modifierSourceId: e.target.checked ? '' : copiedSource?.id ?? '',
+                        modifierRevision: form.modifierRevision + 1,
+                      })}
+                      className="accent-orange-500"
+                    />
+                    Auto-fill modifiers from similar items
+                  </label>
+                )}
+                {copiedSource && (
+                  <p role="status" className="mt-2 text-[11px] font-bold text-neutral-600">
+                    {autoSource ? 'Auto-filled' : 'Copied'} from {copiedSource.name}. You can customize this item's copy below.
+                  </p>
+                )}
+                {form.autoModifiers && !autoSource && form.name.trim() && sources.length > 0 && (
+                  <p className="mt-2 text-[11px] font-medium text-neutral-500">Different modifier setups found in this category. Choose an item to copy from.</p>
+                )}
+                {sources.length > 0 ? (
+                  <label className="mt-2 block text-[10.5px] font-bold text-neutral-500">
+                    Copy modifiers from
+                    <select
+                      value={copiedSource?.id ?? ''}
+                      onChange={(e) => {
+                        const source = sources.find((item) => item.id === e.target.value)
+                        if (!source) return
+                        setForm({
+                          ...form,
+                          autoModifiers: false,
+                          modifiers: cloneModifierGroups(source.modifiers ?? []),
+                          modifierSourceId: source.id,
+                          modifierRevision: form.modifierRevision + 1,
+                        })
+                      }}
+                      className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-[12px] font-medium text-neutral-700 outline-none focus:border-primary"
+                    >
+                      <option value="">Choose an item in this category</option>
+                      {sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
+                    </select>
+                  </label>
+                ) : (
+                  <p className="mt-2 text-[11px] font-medium text-neutral-500">Modifiers from items in this category will appear here for reuse.</p>
+                )}
+                {formModifiers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, modifiers: [], autoModifiers: false, modifierSourceId: '', modifierRevision: form.modifierRevision + 1 })}
+                    className="mt-2 text-[11px] font-extrabold text-primary hover:text-primary-dark"
+                  >
+                    Start empty
+                  </button>
+                )}
+              </div>
               <ModifierGroupsEditor
-                groups={form.modifiers}
-                onChange={(modifiers) => setForm((f) => f && ({ ...f, modifiers }))}
+                key={`${copiedSource?.id ?? 'custom'}-${form.modifierRevision}`}
+                groups={formModifiers}
+                onChange={(modifiers) => setForm((f) => f && ({ ...f, modifiers, autoModifiers: false, modifierSourceId: copiedSource?.id ?? '' }))}
               />
             </div>
             <button

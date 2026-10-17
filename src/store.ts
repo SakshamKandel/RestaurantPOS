@@ -101,6 +101,11 @@ export interface PlacedOrder {
   cashier: string
 }
 
+/** A pre-payment bill snapshot, kept separately from completed sales. */
+export type UnpaidBill = Pick<PlacedOrder,
+  'number' | 'type' | 'customer' | 'lines' | 'subtotal' | 'discount' | 'tax' |
+  'total' | 'note' | 'taxBreakdown' | 'createdAt' | 'cashier'>
+
 export interface HeldOrder {
   id: string
   label: string
@@ -112,7 +117,7 @@ export interface HeldOrder {
 
 export type PrinterRole = 'kitchen' | 'billing'
 
-export type DocType = 'KITCHEN TICKET' | 'RECEIPT' | 'DRAWER KICK' | 'TEST'
+export type DocType = 'KITCHEN TICKET' | 'RECEIPT' | 'UNPAID BILL' | 'DRAWER KICK' | 'TEST'
 
 export interface PrintJob {
   id: string
@@ -126,6 +131,8 @@ export interface PrintJob {
   error?: string
   /** Windows device the job was (or will be) sent to. */
   device?: string
+  /** Immutable cart snapshot so unpaid bills can be retried after checkout/restart. */
+  bill?: UnpaidBill
 }
 
 // ---------- Cash drawer & shift ----------

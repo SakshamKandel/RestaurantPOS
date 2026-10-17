@@ -1,5 +1,5 @@
 import { formatMoney, modsTotal, type Settings } from '../data/menu'
-import type { PlacedOrder, PaymentRecord } from '../store'
+import type { PlacedOrder, PaymentRecord, UnpaidBill } from '../store'
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -51,13 +51,13 @@ hr.solid{border-top:1.5px solid #000}
 /* ------------------------------------------------------------------ */
 /*  Customer receipt                                                    */
 /* ------------------------------------------------------------------ */
-export function receiptHtml(o: PlacedOrder, s: Settings, copy = false): string {
+function customerDocumentHtml(o: UnpaidBill, s: Settings, paid?: PlacedOrder, copy = false): string {
   const w = Number(s.billingPaper)
   const items = o.lines
     .map((l) => {
       const unit = l.price + modsTotal(l.mods)
       return `
-<div class="item"><span class="q">${l.qty}</span><span class="n">${esc(l.name)}${l.refundedQty ? ` <span class="xs">(refunded ${l.refundedQty})</span>` : ''}</span><span class="p">${formatMoney(l.qty * unit)}</span></div>${
+<div class="item"><span class="q">${l.qty}</span><span class="n">${esc(l.name)}${paid && l.refundedQty ? ` <span class="xs">(refunded ${l.refundedQty})</span>` : ''}</span><span class="p">${formatMoney(l.qty * unit)}</span></div>${
         (l.mods ?? [])
           .map((m) => `<div class="note xs">+ ${esc(m.name)}${m.price ? ` ${formatMoney(m.price)}` : ''}</div>`)
           .join('')
@@ -66,12 +66,12 @@ export function receiptHtml(o: PlacedOrder, s: Settings, copy = false): string {
     .join('')
   const qty = o.lines.reduce((n, l) => n + l.qty, 0)
   // split payments when present, else the legacy single payment fields
-  const pays: PaymentRecord[] = o.payments?.length
-    ? o.payments
-    : [{ method: o.payment, amount: o.total - o.change, tendered: o.tendered, change: o.change }]
+  const pays: PaymentRecord[] = !paid ? [] : paid.payments?.length
+    ? paid.payments
+    : [{ method: paid.payment, amount: paid.total - paid.change, tendered: paid.tendered, change: paid.change }]
   const totalChange = pays.reduce((n, p) => n + (p.change ?? 0), 0)
   const payRows =
-    pays
+    paid ? pays
       .map(
         (p) => `<div class="row"><span>${PAY_LABEL[p.method] ?? p.method}${p.method === 'cash' ? ' tendered' : ''}</span><span>${formatMoney(p.method === 'cash' ? (p.tendered ?? p.amount) : p.amount)}</span></div>`,
       )
@@ -81,6 +81,7 @@ export function receiptHtml(o: PlacedOrder, s: Settings, copy = false): string {
       : pays.every((p) => p.method !== 'cash')
         ? '<div class="row"><span>Status</span><span>APPROVED</span></div>'
         : '')
+    : `<div class="row b"><span>Amount due</span><span>${formatMoney(o.total)}</span></div>`
   const taxRows = o.taxBreakdown?.length
     ? o.taxBreakdown
         .map((t) => `<div class="row"><span>Tax · ${esc(t.name)} (${(t.rate * 100).toFixed(2)}%)</span><span>${formatMoney(t.amount)}</span></div>`)
@@ -94,13 +95,13 @@ export function receiptHtml(o: PlacedOrder, s: Settings, copy = false): string {
   return base(
     w,
     `
-${copy ? '<p class="c"><span class="badge">DUPLICATE COPY</span></p><br>' : ''}
+${paid ? copy ? '<p class="c"><span class="badge">DUPLICATE COPY</span></p><br>' : '' : '<p class="c"><span class="badge">UNPAID BILL</span></p><br>'}
 <p class="c b lg u">${esc(s.restaurantName)}</p>
 ${header}
 ${s.taxId ? `<p class="c xs">${esc(s.taxId)}</p>` : ''}
 <hr class="solid">
 <div class="row"><span>${fmtDate(o.createdAt)}</span><span>${fmtTime(o.createdAt)}</span></div>
-<div class="row"><span>Order</span><span class="b">${esc(o.number)}</span></div>
+<div class="row"><span>${paid ? 'Order' : 'Bill reference'}</span><span class="b">${esc(o.number)}</span></div>
 <div class="row"><span>Served by</span><span>${esc(o.cashier)}</span></div>
 ${o.customer && o.customer !== 'Walk-in' ? `<div class="row"><span>Customer</span><span>${esc(o.customer)}</span></div>` : ''}
 <p class="c mt"><span class="badge">${TYPE_LABEL[o.type] ?? o.type.toUpperCase()}</span></p>
@@ -114,10 +115,10 @@ ${o.discount ? `<div class="row"><span>Discount</span><span>-${formatMoney(o.dis
 ${taxRows}
 <hr class="solid">
 <div class="tot"><span>TOTAL</span><span>${formatMoney(o.total)}</span></div>
-${o.status === 'refunded' ? '<p class="c b">*** REFUNDED ***</p>' : o.status === 'partial-refund' ? '<p class="c b">*** PARTIALLY REFUNDED ***</p>' : ''}
+${paid?.status === 'refunded' ? '<p class="c b">*** REFUNDED ***</p>' : paid?.status === 'partial-refund' ? '<p class="c b">*** PARTIALLY REFUNDED ***</p>' : ''}
 <hr class="solid">
 ${payRows}
-${o.refunds?.map((r) => `<div class="row xs"><span>Refund ${fmtTime(r.at)}</span><span>-${formatMoney(r.amount)}</span></div>`).join('') ?? ''}
+${paid?.refunds?.map((r) => `<div class="row xs"><span>Refund ${fmtTime(r.at)}</span><span>-${formatMoney(r.amount)}</span></div>`).join('') ?? ''}
 ${o.note ? `<div class="box xs"><span class="b">Note:</span> ${esc(o.note)}</div>` : ''}
 <div class="footer c">
   <p class="b">${esc(s.receiptFooter)}</p>
@@ -125,6 +126,15 @@ ${o.note ? `<div class="box xs"><span class="b">Note:</span> ${esc(o.note)}</div
   <p class="xs mt">${esc(o.number)} · ${fmtDate(o.createdAt)} ${fmtTime(o.createdAt)}</p>
 </div>`,
   )
+}
+
+export function receiptHtml(o: PlacedOrder, s: Settings, copy = false): string {
+  return customerDocumentHtml(o, s, o, copy)
+}
+
+/** A draft customer bill contains amounts owed, without any payment claim. */
+export function unpaidBillHtml(o: UnpaidBill, s: Settings): string {
+  return customerDocumentHtml(o, s)
 }
 
 /* ------------------------------------------------------------------ */
